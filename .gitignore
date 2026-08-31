@@ -1,0 +1,30 @@
+# Ambientes Virtuais Python
+venv/
+.venv/
+env/
+ENV/
+
+# Caches e arquivos temporários do Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+
+# Arquivos do Sistema Operacional
+.DS_Store
+Thumbs.db
+
+# Dados Brutos e Intermediários Pesados (reprodutíveis via script)
+data/bronze/*.csv
+data/silver/*.csv
+
+# Manter apenas as pastas no Git via .gitkeep
+!data/bronze/.gitkeep
+!data/silver/.gitkeep
+!data/gold/.gitkeep
+
+# IDEs e configurações locais
+.vscode/
+.idea/
+*.log
