@@ -83,6 +83,34 @@ streamlit run src/dashboard/app.py
 
 ---
 
+## 🔄 CI/CD e Publicação
+
+O workflow [`.github/workflows/medalhao.yml`](.github/workflows/medalhao.yml) roda
+a cada `push` na `main`, em cada Pull Request, semanalmente (segunda 06:00 UTC) e
+sob demanda (`workflow_dispatch`):
+
+1. **Job `pipeline`** — executa o medalhão do zero numa máquina limpa
+   (ingestão CKAN → Silver → Gold → auditoria → privacidade) e roda a suíte de
+   testes como verificação determinística dos contratos da camada Gold. As
+   camadas Bronze/Silver (que contêm dado pessoal) **nunca** saem do runner; só a
+   Gold agregada (k ≥ 5) e os relatórios em `docs/` são empacotados.
+2. **Job `deploy`** — publica o dashboard Streamlit completo no **GitHub Pages**
+   via [`stlite`](https://github.com/whitphx/stlite) (Python roda no navegador do
+   usuário, sem servidor): **https://murilopbs.github.io/bd2/**
+
+**Configuração única necessária:** em *Settings → Pages*, definir *Source* =
+**GitHub Actions**.
+
+---
+
+## 📄 Licença
+
+Código licenciado sob **GNU General Public License v3.0** — ver [LICENSE](LICENSE).
+Os dados brutos são do portal [dados.unb.br](https://dados.unb.br); as camadas
+derivadas (Gold) seguem os termos de uso do portal de origem.
+
+---
+
 ## 📊 3. Principais Resultados e Achados
 
 1. **Taxa de Formatura no Tempo Ideal**: Apenas **62.43%** dos formados na UnB concluem o curso dentro do prazo regulamentar da matriz curricular.

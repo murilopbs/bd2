@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Observatório de Retenção e Formatura da UnB</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/@stlite/browser@1.8.1/build/stlite.css"
+  />
+  <style>
+    html, body, #root { height: 100%; margin: 0; }
+    #boot {
+      font: 15px system-ui, sans-serif; color: #334155;
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; padding: 2rem; text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"><div id="boot">Carregando o painel (Python roda no seu navegador, pode levar ~30s na primeira vez)…</div></div>
+  <script type="module">
+    import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@1.8.1/build/stlite.js";
+
+    // O app.py usa Path(__file__).parent.parent.parent como raiz; com o entrypoint
+    // em src/dashboard/app.py, a raiz do filesystem virtual bate com a estrutura abaixo.
+    mount(
+      {
+        entrypoint: "src/dashboard/app.py",
+        requirements: ["plotly"], // streamlit, pandas e numpy já vêm no bundle stlite
+        files: {
+          "src/dashboard/app.py": { url: "./app/src/dashboard/app.py" },
+          "data/gold/retencao_cursos_unb.csv": { url: "./app/data/gold/retencao_cursos_unb.csv" },
+          "data/gold/metricas_gerais_unb.json": { url: "./app/data/gold/metricas_gerais_unb.json" },
+          "data/gold/relatorio_casamento_joins.json": { url: "./app/data/gold/relatorio_casamento_joins.json" },
+          "docs/relatorio_qualidade.md": { url: "./app/docs/relatorio_qualidade.md" },
+        },
+      },
+      document.getElementById("root"),
+    );
+  </script>
+</body>
+</html>

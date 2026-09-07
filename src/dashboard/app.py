@@ -333,7 +333,7 @@ if df_gold is not None:
     elif tab_choice == "⚠️ O Que Este Dado NÃO Responde":
         st.subheader("⚠️ Slide Obrigatório: O Que Este Dado NÃO Responde")
         st.markdown(
-            """
+            r"""
             Para manter o rigor metodológico e científico na tomada de decisão do DEG:
             
             1. **Motivos Individuais de Evasão**: Os dados abertos não informam razões socioeconômicas, de saúde mental, incompatibilidade de horário de trabalho ou insatisfação com a carreira.

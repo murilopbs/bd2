@@ -101,7 +101,14 @@ def run_ingestion(output_dir: Optional[Path] = None) -> Dict[str, Path]:
     downloaded_files = {}
     metadata_summary = {}
 
+    # Permite pular datasets via env (ex.: SKIP_DATASETS=sigaa) — usado no CI,
+    # onde 'sigaa' não é consumido por nenhuma etapa do pipeline.
+    skip = {s.strip() for s in os.environ.get("SKIP_DATASETS", "").split(",") if s.strip()}
+
     for key, config in DATASETS_CONFIG.items():
+        if key in skip:
+            logger.info(f"Pulando dataset '{key}' (SKIP_DATASETS).")
+            continue
         pkg_id = config["package_id"]
         meta = fetch_package_metadata(pkg_id)
         metadata_summary[pkg_id] = meta
