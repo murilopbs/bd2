@@ -60,7 +60,10 @@ class TestDataPipeline(unittest.TestCase):
             join_meta = json.load(f)
             
         taxa = join_meta.get("taxa_de_casamento_pct", 0)
-        self.assertGreaterEqual(taxa, 90.0, f"Taxa de casamento abaixo da meta de 90%: {taxa}%")
+        self.assertEqual(taxa, 100.0, f"Taxa de casamento abaixo de 100%: {taxa}%")
+        
+        regras_path = GOLD_DIR / "regras_harmonizacao_canonicas.json"
+        self.assertTrue(regras_path.exists(), "regras_harmonizacao_canonicas.json ausente na Gold")
         
         df_gold = pd.read_csv(gold_path)
         self.assertGreater(len(df_gold), 50, "Quantidade de cursos na Gold muito reduzida")
@@ -93,6 +96,40 @@ class TestDataPipeline(unittest.TestCase):
         # Supressão de cursos com menos de 5 discentes
         self.assertTrue((df_gold["total_discentes_registrados"] >= 5).all(), "Grupo com k < 5 discentes não foi suprimido")
 
+    def test_05_pibic_pipeline_and_social_metrics(self):
+        """Verifica a integridade da ingestão, camada Silver e métricas sociais da Iniciação Científica (PIBIC)."""
+        bronze_pibic = BRONZE_DIR / "bolsistas_iniciacao_cientifica.csv"
+        silver_pibic = SILVER_DIR / "pibic_bolsistas_silver.csv"
+        gold_pibic = GOLD_DIR / "pibic_social_unb.csv"
+        json_pibic = GOLD_DIR / "pibic_metricas_gerais.json"
+        
+        self.assertTrue(bronze_pibic.exists(), "bolsistas_iniciacao_cientifica.csv ausente na Bronze")
+        self.assertTrue(silver_pibic.exists(), "pibic_bolsistas_silver.csv ausente na Silver")
+        self.assertTrue(gold_pibic.exists(), "pibic_social_unb.csv ausente na Gold")
+        self.assertTrue(json_pibic.exists(), "pibic_metricas_gerais.json ausente na Gold")
+        
+        # Validação Silver
+        df_sil = pd.read_csv(silver_pibic)
+        self.assertIn("matricula_mascarada", df_sil.columns)
+        self.assertIn("perfil_social_macro", df_sil.columns)
+        self.assertIn("tipo_bolsa_norm", df_sil.columns)
+        self.assertNotIn("discente", df_sil.columns, "Nome direto do discente mantido indevidamente")
+        self.assertTrue(df_sil["matricula_mascarada"].str.contains(r"\*\*\*").all(), "Matrícula não foi devidamente mascarada")
+        
+        # Validação Gold
+        df_gold_pibic = pd.read_csv(gold_pibic)
+        self.assertTrue((df_gold_pibic["total_projetos"] >= 5).all(), "Supressão ética k < 5 falhou no PIBIC Gold")
+        
+        with open(json_pibic, "r", encoding="utf-8") as f:
+            pibic_meta = json.load(f)
+            
+        self.assertGreater(pibic_meta["total_projetos_ic"], 10000, "Volume de projetos de IC inconsistente")
+        self.assertGreater(pibic_meta["investimento_publico_total_estimado"], 40000000.0, "Investimento total calculado inconsistente")
+        self.assertGreater(pibic_meta["taxa_inclusao_cotistas_pct"], 30.0, "Taxa de cotistas menor que 30%")
+        self.assertLess(pibic_meta["taxa_inclusao_cotistas_pct"], 50.0, "Taxa de cotistas maior que 50%")
+        self.assertGreater(pibic_meta["taxa_trabalho_voluntario_pct"], 20.0, "Taxa de voluntários PIVIC inconsistente")
+
 
 if __name__ == "__main__":
     unittest.main()
+

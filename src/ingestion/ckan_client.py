@@ -49,6 +49,12 @@ DATASETS_CONFIG = {
         "output_filename": "cursos_graduacao.csv",
         "description": "Catálogo de cursos de graduação, turnos, campus e unidades acadêmicas responsáveis.",
     },
+    "pibic": {
+        "package_id": "bolsistas-de-iniciacao-cientifica",
+        "resource_name_pattern": "bolsistas-de-iniciacao-cientifica.csv",
+        "output_filename": "bolsistas_iniciacao_cientifica.csv",
+        "description": "Relação de bolsistas de Iniciação Científica (PIBIC/PIVIC), cotas sociais, bolsas remuneradas/voluntárias e linhas de pesquisa.",
+    },
 }
 
 

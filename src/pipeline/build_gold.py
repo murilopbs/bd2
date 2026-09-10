@@ -23,41 +23,373 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SILVER_DIR = BASE_DIR / "data" / "silver"
 GOLD_DIR = BASE_DIR / "data" / "gold"
 
-# Mapeamento de sinônimos e especializações de cursos (SIGRA -> Estrutura Curricular)
-COURSE_ALIASES = {
-    "LINGUA PORTUGUESA E RESPECTIVA LITERATURA": "LETRAS - LINGUA PORTUGUESA E RESPECTIVA LITERATURA",
-    "CONTROLE E AUTOMACAO": "ENGENHARIA MECATRONICA - CONTROLE E AUTOMACAO",
-    "LINGUA INGLESA E RESPECTIVA LITERATURA": "LETRAS - LINGUA INGLESA E RESPECTIVA LITERATURA",
-    "LINGUA ESPANHOLA E LITERATURA ESPANHOLA E HISPANO-AMERICANA": "LETRAS - LINGUA ESPANHOLA E LITERATURA ESPANHOLA E HISPANO-AMERICANA",
-    "ESPANHOL": "LETRAS - LINGUA ESPANHOLA E LITERATURA ESPANHOLA E HISPANO-AMERICANA",
-    "LINGUA FRANCESA E RESPECTIVA LITERATURA": "LETRAS - LINGUA FRANCESA E RESPECTIVA LITERATURA",
-    "FRANCES": "LETRAS - LINGUA FRANCESA E RESPECTIVA LITERATURA",
-    "INGLES": "LETRAS - LINGUA INGLESA E RESPECTIVA LITERATURA",
-    "LINGUA E LITERATURA JAPONESA": "LETRAS - LINGUA E LITERATURA JAPONESA",
-    "COMUNICACAO ORGANIZACIONAL": "COMUNICACAO SOCIAL",
-    "PUBLICIDADE E PROPAGANDA": "COMUNICACAO SOCIAL",
-    "AUDIOVISUAL": "COMUNICACAO SOCIAL",
-    "ADMINISTRACAO PUBLICA": "ADMINISTRACAO",
-    "FARMACIA CLINICA E INDUSTRIAL": "FARMACIA",
-    "INTERPRETACAO TEATRAL": "ARTES CENICAS",
-    "PROGRAMACAO VISUAL": "DESIGN",
-    "PROJETO DE PRODUTO": "DESIGN",
-    "SOCIOLOGIA": "CIENCIAS SOCIAIS",
-    "ANTROPOLOGIA": "CIENCIAS SOCIAIS",
-    "CIENCIA POLITICA": "CIENCIAS SOCIAIS",
-    "PORTUGUES DO BRASIL COMO SEGUNDA LINGUA": "LETRAS",
-    "LICENCIATURA EM ARTES VISUAIS": "ARTES VISUAIS",
-    "LICENCIATURA EM CIENCIAS BIOLOGICAS": "CIENCIAS BIOLOGICAS",
-    "LICENCIATURA EM COMPUTACAO": "COMPUTACAO",
-    "LICENCIATURA EM FISICA": "FISICA",
-    "LICENCIATURA EM MATEMATICA": "MATEMATICA",
-    "LICENCIATURA EM QUIMICA": "QUIMICA",
-    "LICENCIATURA EM TEATRO": "ARTES CENICAS",
-    "LICENCIATURA EM MUSICA": "MUSICA",
-    "HABILITACAO TRADUCAO - INGLES": "LETRAS - TRADUCAO - INGLES",
-    "HABILITACAO TRADUCAO - FRANCES": "LETRAS - TRADUCAO - FRANCES",
-    "HABILITACAO TRADUCAO - ESPANHOL": "LETRAS - TRADUCAO - ESPANHOL",
-}
+# Mapeamento detalhado e auditável de Harmonização Canônica (Entity Resolution)
+# Converte nomenclaturas legadas/abreviadas do SIGRA para as matrizes formais da Estrutura Curricular
+CANONICAL_RULES_METADATA = [
+    {
+        "origem_sigra": "PORTUGUES DO BRASIL COMO SEGUNDA LINGUA",
+        "destino_estrutura": "LETRAS - PORTUGUES DO BRASIL COMO SEGUNDA LINGUA",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Habilitação específica do curso de Letras cadastrada com prefixo na matriz curricular.",
+    },
+    {
+        "origem_sigra": "LINGUAGENS",
+        "destino_estrutura": "EDUCACAO DO CAMPO - LINGUAGENS, ARTES E LITERATURA",
+        "categoria": "Educação do Campo (FUP)",
+        "justificativa": "Ênfase da Licenciatura em Educação do Campo da Faculdade de Planaltina.",
+    },
+    {
+        "origem_sigra": "LINGUAGENS, ARTES E LITERATURA",
+        "destino_estrutura": "EDUCACAO DO CAMPO - LINGUAGENS, ARTES E LITERATURA",
+        "categoria": "Educação do Campo (FUP)",
+        "justificativa": "Denominação completa da ênfase de Educação do Campo no campus Planaltina.",
+    },
+    {
+        "origem_sigra": "CIENCIAS DA NATUREZA E MATEMATICA",
+        "destino_estrutura": "EDUCACAO DO CAMPO - CIENCIAS DA NATUREZA E MATEMATICA",
+        "categoria": "Educação do Campo (FUP)",
+        "justificativa": "Ênfase de Ciências da Natureza e Matemática de Educação do Campo.",
+    },
+    {
+        "origem_sigra": "CIENCIAS DA NATUREZA",
+        "destino_estrutura": "EDUCACAO DO CAMPO - CIENCIAS DA NATUREZA",
+        "categoria": "Educação do Campo (FUP)",
+        "justificativa": "Matriz de Ciências da Natureza de Educação do Campo da FUP.",
+    },
+    {
+        "origem_sigra": "PROGRAMACAO VISUAL",
+        "destino_estrutura": "DESIGN - PROGRAMACAO VISUAL",
+        "categoria": "Design / Desenho Industrial",
+        "justificativa": "Habilitação clássica de Design vinculada à matriz oficial de Programação Visual.",
+    },
+    {
+        "origem_sigra": "PROJETO DO PRODUTO",
+        "destino_estrutura": "DESIGN - PROJETO DO PRODUTO",
+        "categoria": "Design / Desenho Industrial",
+        "justificativa": "Habilitação clássica de Design vinculada à matriz oficial de Projeto do Produto.",
+    },
+    {
+        "origem_sigra": "PROJETO DE PRODUTO",
+        "destino_estrutura": "DESIGN - PROJETO DO PRODUTO",
+        "categoria": "Design / Desenho Industrial",
+        "justificativa": "Variação de preposição 'DE'/'DO' unificada para a matriz oficial.",
+    },
+    {
+        "origem_sigra": "LINGUA DE SINAIS BRASILEIRA - PORTUGUES COMO SEGUNDA LINGUA",
+        "destino_estrutura": "LINGUA DE SINAIS BRASILEIRA -PORTUGUES COMO SEGUNDA LINGUA",
+        "categoria": "Correção de Typo no Portal",
+        "justificativa": "A matriz no portal dados.unb.br foi cadastrada com ausência de espaço após o hífen ('-PORTUGUES').",
+    },
+    {
+        "origem_sigra": "PEDAGOGIA - 1A LICENCIATURA",
+        "destino_estrutura": "PEDAGOGIA",
+        "categoria": "Licenciatura",
+        "justificativa": "Programa de 1ª Licenciatura vinculado à matriz de referência de Pedagogia.",
+    },
+    {
+        "origem_sigra": "COMPOSICAO",
+        "destino_estrutura": "MUSICA - COMPOSICAO",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação em Composição Musical vinculada ao catálogo oficial com prefixo 'MUSICA'.",
+    },
+    {
+        "origem_sigra": "MATEMATICA - SEGUNDA LICENCIATURA",
+        "destino_estrutura": "MATEMATICA",
+        "categoria": "Licenciatura",
+        "justificativa": "Programa especial de 2ª Licenciatura vinculado à matriz de referência de Matemática.",
+    },
+    {
+        "origem_sigra": "CIENCIAS NATURAIS - SEGUNDA LICENCIATURA",
+        "destino_estrutura": "CIENCIAS NATURAIS",
+        "categoria": "Licenciatura",
+        "justificativa": "Programa especial de 2ª Licenciatura vinculado à matriz de referência de Ciências Naturais.",
+    },
+    {
+        "origem_sigra": "ADMINISTRACAO DE EMPRESAS",
+        "destino_estrutura": "ADMINISTRACAO",
+        "categoria": "Habilitação Legada",
+        "justificativa": "Nomenclatura antiga no SIGRA vinculada à matriz vigente de Administração.",
+    },
+    {
+        "origem_sigra": "ENFERMAGEM E OBSTETRICIA",
+        "destino_estrutura": "ENFERMAGEM",
+        "categoria": "Habilitação Legada",
+        "justificativa": "Nomenclatura antiga no SIGRA vinculada à matriz vigente de Enfermagem.",
+    },
+    {
+        "origem_sigra": "VIOLAO",
+        "destino_estrutura": "MUSICA - VIOLAO",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "SAXOFONE",
+        "destino_estrutura": "MUSICA - SAXOFONE",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "VIOLINO",
+        "destino_estrutura": "MUSICA - VIOLINO",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "CANTO",
+        "destino_estrutura": "MUSICA - CANTO",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental/vocal no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "PIANO",
+        "destino_estrutura": "MUSICA - PIANO",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "REGENCIA",
+        "destino_estrutura": "MUSICA - REGENCIA",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação em Regência no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "CONTRABAIXO",
+        "destino_estrutura": "MUSICA - CONTRABAIXO",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "TROMBONE",
+        "destino_estrutura": "MUSICA - TROMBONE",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "TROMPETE",
+        "destino_estrutura": "MUSICA - TROMPETE",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "VIOLA",
+        "destino_estrutura": "MUSICA - VIOLA",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "VIOLONCELO",
+        "destino_estrutura": "MUSICA - VIOLONCELO",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "OBOE",
+        "destino_estrutura": "MUSICA - OBOE",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "FAGOTE",
+        "destino_estrutura": "MUSICA - FAGOTE",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "FLAUTA",
+        "destino_estrutura": "MUSICA - FLAUTA",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "CLARINETA",
+        "destino_estrutura": "MUSICA - CLARINETA",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental no SIGRA vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "TROMPA",
+        "destino_estrutura": "MUSICA",
+        "categoria": "Música e Instrumentos",
+        "justificativa": "Habilitação instrumental sem matriz específica cadastrada, alocada na matriz geral de Música.",
+    },
+    {
+        "origem_sigra": "LINGUA PORTUGUESA E RESPECTIVA LITERATURA",
+        "destino_estrutura": "LETRAS - LINGUA PORTUGUESA E RESPECTIVA LITERATURA",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Prefixo formal 'LETRAS' adicionado pela matriz curricular.",
+    },
+    {
+        "origem_sigra": "CONTROLE E AUTOMACAO",
+        "destino_estrutura": "ENGENHARIA MECATRONICA - CONTROLE E AUTOMACAO",
+        "categoria": "Engenharias",
+        "justificativa": "Matriz formal com prefixo de Engenharia Mecatrônica.",
+    },
+    {
+        "origem_sigra": "LINGUA INGLESA E RESPECTIVA LITERATURA",
+        "destino_estrutura": "LETRAS - LINGUA INGLESA E RESPECTIVA LITERATURA",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Prefixo formal 'LETRAS' adicionado pela matriz curricular.",
+    },
+    {
+        "origem_sigra": "LINGUA ESPANHOLA E LITERATURA ESPANHOLA E HISPANO-AMERICANA",
+        "destino_estrutura": "LETRAS - LINGUA ESPANHOLA E LITERATURA ESPANHOLA E HISPANO-AMERICANA",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Prefixo formal 'LETRAS' adicionado pela matriz curricular.",
+    },
+    {
+        "origem_sigra": "ESPANHOL",
+        "destino_estrutura": "LETRAS - LINGUA ESPANHOLA E LITERATURA ESPANHOLA E HISPANO-AMERICANA",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Abreviação coloquial do SIGRA mapeada para a matriz curricular oficial.",
+    },
+    {
+        "origem_sigra": "LINGUA FRANCESA E RESPECTIVA LITERATURA",
+        "destino_estrutura": "LETRAS - LINGUA FRANCESA E RESPECTIVA LITERATURA",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Prefixo formal 'LETRAS' adicionado pela matriz curricular.",
+    },
+    {
+        "origem_sigra": "FRANCES",
+        "destino_estrutura": "LETRAS - LINGUA FRANCESA E RESPECTIVA LITERATURA",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Abreviação coloquial do SIGRA mapeada para a matriz curricular oficial.",
+    },
+    {
+        "origem_sigra": "INGLES",
+        "destino_estrutura": "LETRAS - LINGUA INGLESA E RESPECTIVA LITERATURA",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Abreviação coloquial do SIGRA mapeada para a matriz curricular oficial.",
+    },
+    {
+        "origem_sigra": "LINGUA E LITERATURA JAPONESA",
+        "destino_estrutura": "LETRAS - LINGUA E LITERATURA JAPONESA",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Prefixo formal 'LETRAS' adicionado pela matriz curricular.",
+    },
+    {
+        "origem_sigra": "COMUNICACAO ORGANIZACIONAL",
+        "destino_estrutura": "COMUNICACAO SOCIAL",
+        "categoria": "Comunicação",
+        "justificativa": "Habilitação de Comunicação Organizacional alocada na matriz tronco de Comunicação Social.",
+    },
+    {
+        "origem_sigra": "PUBLICIDADE E PROPAGANDA",
+        "destino_estrutura": "COMUNICACAO SOCIAL",
+        "categoria": "Comunicação",
+        "justificativa": "Habilitação de Publicidade alocada na matriz tronco de Comunicação Social.",
+    },
+    {
+        "origem_sigra": "AUDIOVISUAL",
+        "destino_estrutura": "COMUNICACAO SOCIAL",
+        "categoria": "Comunicação",
+        "justificativa": "Habilitação de Audiovisual alocada na matriz tronco de Comunicação Social.",
+    },
+    {
+        "origem_sigra": "ADMINISTRACAO PUBLICA",
+        "destino_estrutura": "ADMINISTRACAO",
+        "categoria": "Administração",
+        "justificativa": "Ênfase pública vinculada à matriz curricular de Administração.",
+    },
+    {
+        "origem_sigra": "FARMACIA CLINICA E INDUSTRIAL",
+        "destino_estrutura": "FARMACIA",
+        "categoria": "Saúde",
+        "justificativa": "Habilitação clínica e industrial vinculada à matriz de Farmácia.",
+    },
+    {
+        "origem_sigra": "INTERPRETACAO TEATRAL",
+        "destino_estrutura": "ARTES CENICAS",
+        "categoria": "Artes",
+        "justificativa": "Habilitação de Interpretação Teatral vinculada à matriz de Artes Cênicas.",
+    },
+    {
+        "origem_sigra": "SOCIOLOGIA",
+        "destino_estrutura": "CIENCIAS SOCIAIS",
+        "categoria": "Ciências Sociais",
+        "justificativa": "Habilitação de Sociologia vinculada à matriz de Ciências Sociais.",
+    },
+    {
+        "origem_sigra": "ANTROPOLOGIA",
+        "destino_estrutura": "CIENCIAS SOCIAIS",
+        "categoria": "Ciências Sociais",
+        "justificativa": "Habilitação de Antropologia vinculada à matriz de Ciências Sociais.",
+    },
+    {
+        "origem_sigra": "CIENCIA POLITICA",
+        "destino_estrutura": "CIENCIAS SOCIAIS",
+        "categoria": "Ciências Sociais",
+        "justificativa": "Habilitação de Ciência Política vinculada à matriz de Ciências Sociais.",
+    },
+    {
+        "origem_sigra": "LICENCIATURA EM ARTES VISUAIS",
+        "destino_estrutura": "ARTES VISUAIS",
+        "categoria": "Licenciatura",
+        "justificativa": "Licenciatura vinculada à matriz correspondente de Artes Visuais.",
+    },
+    {
+        "origem_sigra": "LICENCIATURA EM CIENCIAS BIOLOGICAS",
+        "destino_estrutura": "CIENCIAS BIOLOGICAS",
+        "categoria": "Licenciatura",
+        "justificativa": "Licenciatura vinculada à matriz correspondente de Ciências Biológicas.",
+    },
+    {
+        "origem_sigra": "LICENCIATURA EM COMPUTACAO",
+        "destino_estrutura": "COMPUTACAO",
+        "categoria": "Licenciatura",
+        "justificativa": "Licenciatura vinculada à matriz correspondente de Computação.",
+    },
+    {
+        "origem_sigra": "LICENCIATURA EM FISICA",
+        "destino_estrutura": "FISICA",
+        "categoria": "Licenciatura",
+        "justificativa": "Licenciatura vinculada à matriz correspondente de Física.",
+    },
+    {
+        "origem_sigra": "LICENCIATURA EM MATEMATICA",
+        "destino_estrutura": "MATEMATICA",
+        "categoria": "Licenciatura",
+        "justificativa": "Licenciatura vinculada à matriz correspondente de Matemática.",
+    },
+    {
+        "origem_sigra": "LICENCIATURA EM QUIMICA",
+        "destino_estrutura": "QUIMICA",
+        "categoria": "Licenciatura",
+        "justificativa": "Licenciatura vinculada à matriz correspondente de Química.",
+    },
+    {
+        "origem_sigra": "LICENCIATURA EM TEATRO",
+        "destino_estrutura": "ARTES CENICAS",
+        "categoria": "Licenciatura",
+        "justificativa": "Licenciatura em Teatro vinculada à matriz de Artes Cênicas.",
+    },
+    {
+        "origem_sigra": "LICENCIATURA EM MUSICA",
+        "destino_estrutura": "MUSICA",
+        "categoria": "Licenciatura",
+        "justificativa": "Licenciatura em Música vinculada à matriz de Música.",
+    },
+    {
+        "origem_sigra": "HABILITACAO TRADUCAO - INGLES",
+        "destino_estrutura": "LETRAS - TRADUCAO - INGLES",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Habilitação em Tradução com prefixo de Letras.",
+    },
+    {
+        "origem_sigra": "HABILITACAO TRADUCAO - FRANCES",
+        "destino_estrutura": "LETRAS - TRADUCAO - FRANCES",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Habilitação em Tradução com prefixo de Letras.",
+    },
+    {
+        "origem_sigra": "HABILITACAO TRADUCAO - ESPANHOL",
+        "destino_estrutura": "LETRAS - TRADUCAO - ESPANHOL",
+        "categoria": "Letras e Línguas",
+        "justificativa": "Habilitação em Tradução com prefixo de Letras.",
+    },
+]
+
+# Dicionário dinâmico de mapeamento rápido
+COURSE_ALIASES = {rule["origem_sigra"]: rule["destino_estrutura"] for rule in CANONICAL_RULES_METADATA}
 
 
 def build_gold_layer() -> Tuple[pd.DataFrame, Dict]:
@@ -99,7 +431,7 @@ def build_gold_layer() -> Tuple[pd.DataFrame, Dict]:
         how="left",
     )
     
-    # 5. Auditoria da Taxa de Casamento (Join Match Rate)
+    # 5. Auditoria da Taxa de Casamento (Join Match Rate) e Governança de Entidades
     matched_mask = df_merged["semestre_conclusao_ideal"].notna()
     matched_count = int(matched_mask.sum())
     unmatched_count = total_discentes - matched_count
@@ -112,16 +444,45 @@ def build_gold_layer() -> Tuple[pd.DataFrame, Dict]:
         .to_dict()
     )
     
+    # Contagem de alunos impactados por cada regra de harmonização canônica
+    orig_counts = df_sig["curso_norm"].value_counts().to_dict()
+    regras_auditadas = []
+    total_discentes_harmonizados = 0
+    for rule in CANONICAL_RULES_METADATA:
+        orig = rule["origem_sigra"]
+        cnt = orig_counts.get(orig, 0)
+        total_discentes_harmonizados += cnt
+        regras_auditadas.append({
+            "origem_sigra": orig,
+            "destino_estrutura": rule["destino_estrutura"],
+            "categoria": rule["categoria"],
+            "justificativa": rule["justificativa"],
+            "discentes_impactados": cnt,
+        })
+    regras_auditadas.sort(key=lambda r: r["discentes_impactados"], reverse=True)
+
+    with open(GOLD_DIR / "regras_harmonizacao_canonicas.json", "w", encoding="utf-8") as f:
+        json.dump({
+            "total_regras": len(regras_auditadas),
+            "total_discentes_harmonizados": total_discentes_harmonizados,
+            "metodologia": "Entity Resolution e Harmonização Canônica (SIGRA -> Matrizes Curriculares Ativas)",
+            "regras": regras_auditadas,
+        }, f, indent=2, ensure_ascii=False)
+
     join_report = {
         "total_discentes_graduacao": total_discentes,
         "discentes_com_estrutura_casada": matched_count,
         "discentes_sem_casamento": unmatched_count,
         "taxa_de_casamento_pct": round(match_rate_pct, 2),
         "cursos_nao_casados_principais": unmatched_courses,
+        "harmonizacao_ativa": True,
+        "total_discentes_harmonizados": total_discentes_harmonizados,
         "justificativa_descartes": (
-            "Os 2.46% de registros não casados correspondem a habilitações extintas, "
-            "cursos experimentais ou registros com nomes nulos que não possuem matriz curricular "
-            "cadastrada no portal atual."
+            "Taxa de 100.00% alcançada através de Harmonização Canônica transparente "
+            "e auditável de regras de equivalência entre sistemas legados (SIGRA) e matrizes curriculares ativas. "
+            "Zero registros descartados."
+        ) if unmatched_count == 0 else (
+            f"{unmatched_count} registros não casados restantes."
         ),
     }
     
@@ -265,6 +626,33 @@ def build_gold_layer() -> Tuple[pd.DataFrame, Dict]:
         
     df_gold["classificacao_retencao"] = df_gold["indice_retencao_critica"].apply(classificar)
     
+    # Enriquecimento com dados do PIBIC (Iniciação Científica) se disponível
+    pibic_silver_path = SILVER_DIR / "pibic_bolsistas_silver.csv"
+    if pibic_silver_path.exists():
+        df_pibic_raw = pd.read_csv(pibic_silver_path)
+        pibic_course_agg = df_pibic_raw.groupby("curso_pibic_norm").agg(
+            pibic_total_projetos=("ano", "count"),
+            pibic_bolsas_remuneradas=("tipo_bolsa_norm", lambda s: (s == "REMUNERADA").sum()),
+            pibic_bolsas_voluntarias=("tipo_bolsa_norm", lambda s: (s == "VOLUNTARIA").sum()),
+            pibic_cotistas=("is_cotista", "sum"),
+            pibic_investimento_total=("valor_bolsa_anual_estimado", "sum"),
+        ).reset_index()
+        
+        df_gold = pd.merge(
+            df_gold,
+            pibic_course_agg,
+            left_on="curso",
+            right_on="curso_pibic_norm",
+            how="left",
+        )
+        df_gold["pibic_total_projetos"] = df_gold["pibic_total_projetos"].fillna(0).astype(int)
+        df_gold["pibic_investimento_total"] = df_gold["pibic_investimento_total"].fillna(0.0)
+        df_gold["pibic_projetos_por_100_alunos"] = (
+            df_gold["pibic_total_projetos"] / df_gold["total_discentes_registrados"] * 100
+        ).round(2)
+        if "curso_pibic_norm" in df_gold.columns:
+            df_gold.drop(columns=["curso_pibic_norm"], inplace=True)
+
     # Ordenar por índice de retenção decrescente
     df_gold = df_gold.sort_values(by="indice_retencao_critica", ascending=False)
     
@@ -296,5 +684,117 @@ def build_gold_layer() -> Tuple[pd.DataFrame, Dict]:
     return df_gold, global_metrics
 
 
+def build_pibic_gold() -> Tuple[pd.DataFrame, Dict]:
+    """
+    Constrói a tabela analítica Gold do PIBIC (Iniciação Científica)
+    e consolida os indicadores de custo total e inclusão social.
+    """
+    GOLD_DIR.mkdir(parents=True, exist_ok=True)
+    pibic_silver_path = SILVER_DIR / "pibic_bolsistas_silver.csv"
+    
+    if not pibic_silver_path.exists():
+        logger.warning(f"Arquivo {pibic_silver_path.name} não encontrado. Pulando Gold do PIBIC.")
+        return pd.DataFrame(), {}
+        
+    df_pibic = pd.read_csv(pibic_silver_path)
+    total_registros = len(df_pibic)
+    
+    # 1. Indicadores Financeiros e Totais
+    total_remuneradas = int((df_pibic["tipo_bolsa_norm"] == "REMUNERADA").sum())
+    total_voluntarias = int((df_pibic["tipo_bolsa_norm"] == "VOLUNTARIA").sum())
+    total_investido = float(df_pibic["valor_bolsa_anual_estimado"].sum())
+    
+    # 2. Indicadores Sociais (Cotas e Inclusão)
+    total_cotistas = int(df_pibic["is_cotista"].sum())
+    taxa_inclusao_cotistas = round((total_cotistas / total_registros * 100), 2) if total_registros else 0.0
+    taxa_trabalho_voluntario = round((total_voluntarias / total_registros * 100), 2) if total_registros else 0.0
+    
+    # Distribuição por Perfil Social Macro
+    dist_social = (
+        df_pibic["perfil_social_macro"].value_counts(normalize=True) * 100
+    ).round(2).to_dict()
+    
+    # Distribuição por Cota Detalhe
+    dist_cota_detalhe = df_pibic["cota_detalhe"].value_counts().to_dict()
+    
+    # Distribuição por Campi
+    campi_agg = df_pibic.groupby("campus").agg(
+        total_projetos=("ano", "count"),
+        total_remuneradas=("tipo_bolsa_norm", lambda s: (s == "REMUNERADA").sum()),
+        total_cotistas=("is_cotista", "sum"),
+        valor_investido=("valor_bolsa_anual_estimado", "sum"),
+    ).reset_index()
+    campi_agg["pct_projetos"] = (campi_agg["total_projetos"] / total_registros * 100).round(2)
+    campi_agg["pct_cotistas"] = (campi_agg["total_cotistas"] / campi_agg["total_projetos"] * 100).round(2)
+    dist_campi = campi_agg.to_dict(orient="records")
+    
+    # Distribuição por Grande Área
+    area_agg = df_pibic.groupby("linha_pesquisa_norm").agg(
+        total_projetos=("ano", "count"),
+        total_remuneradas=("tipo_bolsa_norm", lambda s: (s == "REMUNERADA").sum()),
+        total_cotistas=("is_cotista", "sum"),
+        valor_investido=("valor_bolsa_anual_estimado", "sum"),
+    ).reset_index()
+    area_agg["pct_projetos"] = (area_agg["total_projetos"] / total_registros * 100).round(2)
+    area_agg["pct_cotistas"] = (area_agg["total_cotistas"] / area_agg["total_projetos"] * 100).round(2)
+    dist_area = area_agg.to_dict(orient="records")
+    
+    # Evolução Anual
+    ano_agg = df_pibic.groupby("ano").agg(
+        total_projetos=("tipo_bolsa_norm", "count"),
+        remuneradas=("tipo_bolsa_norm", lambda s: (s == "REMUNERADA").sum()),
+        voluntarias=("tipo_bolsa_norm", lambda s: (s == "VOLUNTARIA").sum()),
+        cotistas=("is_cotista", "sum"),
+        investimento_reais=("valor_bolsa_anual_estimado", "sum"),
+    ).reset_index()
+    dist_ano = ano_agg.to_dict(orient="records")
+    
+    # 3. Tabela Analítica Agregada por Curso / Unidade (com k-anônimo >= 5)
+    curso_agg = df_pibic.groupby(["curso_pibic_norm", "campus", "linha_pesquisa_norm"]).agg(
+        total_projetos=("ano", "count"),
+        total_remuneradas=("tipo_bolsa_norm", lambda s: (s == "REMUNERADA").sum()),
+        total_voluntarias_pivic=("tipo_bolsa_norm", lambda s: (s == "VOLUNTARIA").sum()),
+        total_cotistas=("is_cotista", "sum"),
+        total_cotistas_ppi=("perfil_social_macro", lambda s: (s == "PPI / ETNICO-RACIAL").sum()),
+        total_baixa_renda=("faixa_renda", lambda s: (s == "BAIXA RENDA (<= 1.5 SM)").sum()),
+        valor_total_investido=("valor_bolsa_anual_estimado", "sum"),
+    ).reset_index()
+    
+    # Exclui registros sem nome de curso e aplica supressão ética k < 5
+    curso_agg = curso_agg[(curso_agg["curso_pibic_norm"] != "") & (curso_agg["total_projetos"] >= 5)].copy()
+    curso_agg["taxa_cotistas_pct"] = (curso_agg["total_cotistas"] / curso_agg["total_projetos"] * 100).round(1)
+    curso_agg["taxa_voluntario_pct"] = (curso_agg["total_voluntarias_pivic"] / curso_agg["total_projetos"] * 100).round(1)
+    curso_agg = curso_agg.sort_values(by="total_projetos", ascending=False)
+    
+    # Salvar tabela Gold do PIBIC
+    pibic_gold_csv = GOLD_DIR / "pibic_social_unb.csv"
+    curso_agg.to_csv(pibic_gold_csv, index=False, encoding="utf-8")
+    
+    # 4. Consolidar JSON de Métricas
+    pibic_metrics = {
+        "total_projetos_ic": total_registros,
+        "total_bolsas_remuneradas": total_remuneradas,
+        "total_pesquisadores_voluntarios_pivic": total_voluntarias,
+        "investimento_publico_total_estimado": total_investido,
+        "total_cotistas": total_cotistas,
+        "taxa_inclusao_cotistas_pct": taxa_inclusao_cotistas,
+        "taxa_trabalho_voluntario_pct": taxa_trabalho_voluntario,
+        "distribuicao_perfil_social_pct": dist_social,
+        "distribuicao_cota_detalhe": dist_cota_detalhe,
+        "distribuicao_campi": dist_campi,
+        "distribuicao_grande_area": dist_area,
+        "evolucao_anual": dist_ano,
+    }
+    
+    with open(GOLD_DIR / "pibic_metricas_gerais.json", "w", encoding="utf-8") as f:
+        json.dump(pibic_metrics, f, indent=2, ensure_ascii=False)
+        
+    logger.info(f"Tabela Gold PIBIC salva em {pibic_gold_csv.name} com {len(curso_agg)} cursos agregados.")
+    logger.info(f"Métricas gerais do PIBIC salvas em pibic_metricas_gerais.json (Investimento: R$ {total_investido:,.2f})")
+    return curso_agg, pibic_metrics
+
+
 if __name__ == "__main__":
     build_gold_layer()
+    build_pibic_gold()
+

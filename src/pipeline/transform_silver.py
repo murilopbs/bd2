@@ -173,6 +173,148 @@ def process_cursos_graduacao() -> pd.DataFrame:
     return df
 
 
+def process_pibic() -> pd.DataFrame:
+    """
+    Processa a base bruta de bolsistas de iniciação científica (PIBIC/PIVIC),
+    aplicando sanitização LGPD, categorização social e mapeamento territorial.
+    """
+    raw_path = BRONZE_DIR / "bolsistas_iniciacao_cientifica.csv"
+    if not raw_path.exists():
+        logger.warning(f"Arquivo {raw_path.name} não encontrado na camada Bronze. Pulando PIBIC.")
+        return pd.DataFrame()
+        
+    logger.info(f"Processando {raw_path.name} (Iniciação Científica & Análise Social)...")
+    df = pd.read_csv(raw_path, sep=",", encoding="latin-1", on_bad_lines="skip", dtype=str)
+    
+    # 1. Normalização de textos
+    df["titulo_norm"] = df["titulo"].apply(normalize_text)
+    df["orientador_norm"] = df["orientador"].apply(normalize_text)
+    df["linha_pesquisa_norm"] = df["linha_pesquisa"].apply(normalize_text)
+    df["unidade_raw"] = df["unidade"].astype(str).str.strip()
+    df["unidade_norm"] = df["unidade"].apply(normalize_text)
+    df["status_norm"] = df["status"].apply(normalize_text)
+    
+    # 2. Parse temporal
+    df["ano"] = pd.to_numeric(df["ano"], errors="coerce")
+    
+    # 3. Tipo de bolsa (Remunerada vs Voluntária PIVIC)
+    def clean_tipo_bolsa(val):
+        v = normalize_text(val)
+        if "REMUNERADA" in v:
+            return "REMUNERADA"
+        elif "VOLUNTARIA" in v:
+            return "VOLUNTARIA"
+        return "NAO INFORMADO"
+    df["tipo_bolsa_norm"] = df["tipo_de_bolsa"].apply(clean_tipo_bolsa)
+    
+    # 4. Categorização Social de Ingresso e Cotas
+    def categorize_cota_pibic(val):
+        v = normalize_text(val)
+        if not v or v in ["NAO", "UNIVERSAL"]:
+            return "AMPLA CONCORRENCIA", "AMPLA CONCORRENCIA", "NAO APLICAVEL", False
+            
+        is_ppi = any(k in v for k in ["PPI", "NEGRO", "INDIGENA"])
+        is_pcd = "PCD" in v
+        is_baixa_renda = "BAIXA RENDA" in v
+        is_alta_renda = "ALTA RENDA" in v
+        
+        # Grupo detalhado
+        if is_ppi and ("ESCOLA PUB" in v or "ESCOLA PUBLICA" in v):
+            grupo = "ESCOLA PUBLICA - PPI"
+        elif "ESCOLA PUB" in v or "ESCOLA PUBLICA" in v:
+            grupo = "ESCOLA PUBLICA - NAO PPI"
+        elif any(k in v for k in ["NEGRO", "INDIGENA"]):
+            grupo = "COTAS RACIAIS (NEGRO/INDIGENA)"
+        elif is_pcd:
+            grupo = "COTAS PCD"
+        else:
+            grupo = "OUTRAS ACOES AFIRMATIVAS"
+            
+        # Renda
+        if is_baixa_renda:
+            faixa_renda = "BAIXA RENDA (<= 1.5 SM)"
+        elif is_alta_renda:
+            faixa_renda = "INDEPENDENTE DE RENDA"
+        else:
+            faixa_renda = "NAO ESPECIFICADO"
+            
+        perfil_macro = "PPI / ETNICO-RACIAL" if is_ppi else ("ESCOLA PUBLICA" if "ESCOLA PUB" in v else "OUTRAS COTAS")
+        return perfil_macro, grupo, faixa_renda, True
+
+    cota_results = df["cota"].apply(categorize_cota_pibic)
+    df["perfil_social_macro"] = [r[0] for r in cota_results]
+    df["cota_detalhe"] = [r[1] for r in cota_results]
+    df["faixa_renda"] = [r[2] for r in cota_results]
+    df["is_cotista"] = [r[3] for r in cota_results]
+    
+    # 5. Mapeamento Territorial de Campi
+    def parse_campus_pibic(u_norm):
+        if "GAMA" in u_norm:
+            return "FGA - GAMA"
+        elif "CEILANDIA" in u_norm:
+            return "FCE - CEILANDIA"
+        elif "PLANALTINA" in u_norm:
+            return "FUP - PLANALTINA"
+        return "DARCY RIBEIRO"
+    df["campus"] = df["unidade_norm"].apply(parse_campus_pibic)
+    
+    # 6. Extração de Curso e Departamento
+    def parse_curso_pibic(u_raw):
+        if pd.isna(u_raw) or "/" not in str(u_raw):
+            return ""
+        part = str(u_raw).split("/", 1)[1]
+        part = re.sub(r"-?\s*ALUNO:\s*ATIVO", "", part, flags=re.IGNORECASE)
+        return normalize_text(part)
+        
+    def parse_depto_pibic(u_raw):
+        if pd.isna(u_raw) or "/" not in str(u_raw):
+            return normalize_text(u_raw)
+        return normalize_text(str(u_raw).split("/", 1)[0])
+        
+    df["curso_pibic_norm"] = df["unidade_raw"].apply(parse_curso_pibic)
+    df["departamento_pibic_norm"] = df["unidade_raw"].apply(parse_depto_pibic)
+    
+    # 7. Cálculo de Investimento Público por Bolsa
+    def calc_valor_bolsa(row):
+        if row["tipo_bolsa_norm"] != "REMUNERADA":
+            return 0.0
+        ano = row["ano"]
+        if pd.notna(ano) and ano >= 2023:
+            return 700.0 * 12
+        return 400.0 * 12
+    df["valor_bolsa_anual_estimado"] = df.apply(calc_valor_bolsa, axis=1)
+    
+    # 8. Sanitização Ética / LGPD
+    # Descarte de identificador nominal individualizado e mascaramento da matrícula
+    df["matricula_mascarada"] = df["matricula"].astype(str).str.strip().apply(
+        lambda m: (m[:3] + "***" + m[-2:]) if len(m) >= 6 else "***"
+    )
+    
+    cols_silver = [
+        "matricula_mascarada",
+        "ano",
+        "tipo_bolsa_norm",
+        "linha_pesquisa_norm",
+        "campus",
+        "departamento_pibic_norm",
+        "curso_pibic_norm",
+        "perfil_social_macro",
+        "cota_detalhe",
+        "faixa_renda",
+        "is_cotista",
+        "valor_bolsa_anual_estimado",
+        "orientador_norm",
+        "titulo_norm",
+        "status_norm",
+    ]
+    df_pibic_silver = df[cols_silver].copy()
+    
+    out_path = SILVER_DIR / "pibic_bolsistas_silver.csv"
+    df_pibic_silver.to_csv(out_path, index=False, encoding="utf-8")
+    logger.info(f"Salvo {out_path.name} com {len(df_pibic_silver):,} planos de pesquisa de IC tratados.")
+    return df_pibic_silver
+
+
 def run_silver_pipeline():
     """Executa o pipeline completo Bronze -> Silver."""
     SILVER_DIR.mkdir(parents=True, exist_ok=True)
@@ -180,9 +322,11 @@ def run_silver_pipeline():
     df_sigra = process_sigra()
     df_est = process_estrutura_curricular()
     df_cursos = process_cursos_graduacao()
+    df_pibic = process_pibic()
     logger.info("=== Camada Silver Gerada com Sucesso ===")
-    return df_sigra, df_est, df_cursos
+    return df_sigra, df_est, df_cursos, df_pibic
 
 
 if __name__ == "__main__":
     run_silver_pipeline()
+

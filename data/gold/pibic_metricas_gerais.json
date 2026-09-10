@@ -1,0 +1,135 @@
+{
+  "total_projetos_ic": 12793,
+  "total_bolsas_remuneradas": 8741,
+  "total_pesquisadores_voluntarios_pivic": 3274,
+  "investimento_publico_total_estimado": 43069200.0,
+  "total_cotistas": 4976,
+  "taxa_inclusao_cotistas_pct": 38.9,
+  "taxa_trabalho_voluntario_pct": 25.59,
+  "distribuicao_perfil_social_pct": {
+    "AMPLA CONCORRENCIA": 61.1,
+    "PPI / ETNICO-RACIAL": 38.9
+  },
+  "distribuicao_cota_detalhe": {
+    "AMPLA CONCORRENCIA": 7817,
+    "ESCOLA PUBLICA - PPI": 4368,
+    "COTAS RACIAIS (NEGRO/INDIGENA)": 608
+  },
+  "distribuicao_campi": [
+    {
+      "campus": "DARCY RIBEIRO",
+      "total_projetos": 10649,
+      "total_remuneradas": 7257,
+      "total_cotistas": 4158,
+      "valor_investido": 35852400.0,
+      "pct_projetos": 83.24,
+      "pct_cotistas": 39.05
+    },
+    {
+      "campus": "FCE - CEILANDIA",
+      "total_projetos": 1380,
+      "total_remuneradas": 931,
+      "total_cotistas": 561,
+      "valor_investido": 4551600.0,
+      "pct_projetos": 10.79,
+      "pct_cotistas": 40.65
+    },
+    {
+      "campus": "FGA - GAMA",
+      "total_projetos": 539,
+      "total_remuneradas": 387,
+      "total_cotistas": 163,
+      "valor_investido": 1868400.0,
+      "pct_projetos": 4.21,
+      "pct_cotistas": 30.24
+    },
+    {
+      "campus": "FUP - PLANALTINA",
+      "total_projetos": 225,
+      "total_remuneradas": 166,
+      "total_cotistas": 94,
+      "valor_investido": 796800.0,
+      "pct_projetos": 1.76,
+      "pct_cotistas": 41.78
+    }
+  ],
+  "distribuicao_grande_area": [
+    {
+      "linha_pesquisa_norm": "ARTES E HUMANIDADE",
+      "total_projetos": 4834,
+      "total_remuneradas": 3150,
+      "total_cotistas": 2032,
+      "valor_investido": 15447600.0,
+      "pct_projetos": 37.79,
+      "pct_cotistas": 42.04
+    },
+    {
+      "linha_pesquisa_norm": "EXATAS E TECNOLOGICAS",
+      "total_projetos": 3064,
+      "total_remuneradas": 2144,
+      "total_cotistas": 930,
+      "valor_investido": 10622400.0,
+      "pct_projetos": 23.95,
+      "pct_cotistas": 30.35
+    },
+    {
+      "linha_pesquisa_norm": "SAUDE E VIDA",
+      "total_projetos": 4895,
+      "total_remuneradas": 3447,
+      "total_cotistas": 2014,
+      "valor_investido": 16999200.0,
+      "pct_projetos": 38.26,
+      "pct_cotistas": 41.14
+    }
+  ],
+  "evolucao_anual": [
+    {
+      "ano": 2018,
+      "total_projetos": 3025,
+      "remuneradas": 2169,
+      "voluntarias": 856,
+      "cotistas": 1105,
+      "investimento_reais": 10411200.0
+    },
+    {
+      "ano": 2019,
+      "total_projetos": 2516,
+      "remuneradas": 1816,
+      "voluntarias": 700,
+      "cotistas": 1073,
+      "investimento_reais": 8716800.0
+    },
+    {
+      "ano": 2020,
+      "total_projetos": 2623,
+      "remuneradas": 1839,
+      "voluntarias": 782,
+      "cotistas": 1140,
+      "investimento_reais": 8827200.0
+    },
+    {
+      "ano": 2021,
+      "total_projetos": 2374,
+      "remuneradas": 1746,
+      "voluntarias": 627,
+      "cotistas": 965,
+      "investimento_reais": 8380800.0
+    },
+    {
+      "ano": 2022,
+      "total_projetos": 1896,
+      "remuneradas": 862,
+      "voluntarias": 259,
+      "cotistas": 539,
+      "investimento_reais": 4137600.0
+    },
+    {
+      "ano": 2023,
+      "total_projetos": 359,
+      "remuneradas": 309,
+      "voluntarias": 50,
+      "cotistas": 154,
+      "investimento_reais": 2595600.0
+    }
+  ]
+}
