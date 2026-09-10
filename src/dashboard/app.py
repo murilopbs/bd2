@@ -588,18 +588,29 @@ if df_gold is not None:
 
         custo_semestral = custo_anual_aluno / 2.0
         
-        # Modelagem Matemática Prescritiva
-        # 1. Economia gerada pela redução de semestres excedentes
+        # Modelagem Matemática Prescritiva (Análise Custo-Benefício de Políticas Públicas)
+        # 1. Economia gerada pela redução de semestres excedentes (formatura ágil)
         semestres_poupados_totais = total_formados * reducao_semestres
         economia_retencao_reais = semestres_poupados_totais * custo_semestral
         
-        # 2. Redução de evasão projetada (fórmula com amortecimento empírico)
+        # 2. Redução de evasão projetada (fórmula com amortecimento empírico baseado em r = -0.51)
         fator_reducao_evasao = (aumento_pibic_pct / 100.0) * 0.25
         taxa_evasao_projetada = max(5.0, taxa_evasao_atual * (1.0 - fator_reducao_evasao))
         discentes_salvos = int(round(total_discentes * (taxa_evasao_atual - taxa_evasao_projetada) / 100.0))
         
-        # 3. Potencial de Reinvestimento Social (Bolsas de R$ 700/mês = R$ 8.400/ano)
-        bolsas_equivalentes = int(economia_retencao_reais / 8400.0) if economia_retencao_reais > 0 else 0
+        # 3. Retorno Econômico-Social por Evasão Evitada:
+        # Cada aluno que deixa de evadir e se forma preserva o investimento público acumulado (~1 ano letivo médio evitado de desperdício)
+        valor_evasao_evitada_reais = discentes_salvos * custo_anual_aluno
+        
+        # 4. Investimento Adicional em Novas Bolsas de Iniciação Científica / Permanência (R$ 700/mês = R$ 8.400/ano)
+        novas_bolsas_pibic = int(round(max(1, pibic_projetos) * (aumento_pibic_pct / 100.0)))
+        custo_ampliacao_pibic = float(novas_bolsas_pibic * 8400.0)
+        
+        # 5. Benefício Público Total e Saldo Líquido
+        beneficio_total_reais = economia_retencao_reais + valor_evasao_evitada_reais
+        saldo_liquido = beneficio_total_reais - custo_ampliacao_pibic
+        roi_social = (beneficio_total_reais / custo_ampliacao_pibic) if custo_ampliacao_pibic > 0 else 1.0
+        
         tempo_real_projetado = max(sem_ideal, tempo_real_atual - reducao_semestres)
 
         st.markdown("---")
@@ -609,11 +620,11 @@ if df_gold is not None:
         r1, r2, r3, r4 = st.columns(4)
         with r1:
             st.metric(
-                label="Economia Orçamentária Pública",
-                value=f"R$ {economia_retencao_reais:,.2f}" if economia_retencao_reais < 1e6 else f"R$ {economia_retencao_reais/1e6:.2f} Mi",
+                label="Benefício Público Total",
+                value=f"R$ {beneficio_total_reais:,.2f}" if beneficio_total_reais < 1e6 else f"R$ {beneficio_total_reais/1e6:.2f} Mi",
                 delta=f"-{semestres_poupados_totais:,.0f} semestres excedentes",
                 delta_color="normal",
-                help="Recursos públicos poupados ao evitar que discentes fiquem retidos além do prazo regulamentar consumindo infraestrutura.",
+                help="Soma do ganho por formatura ágil (menos semestres excedentes) e do capital público preservado ao evitar a evasão.",
             )
         with r2:
             st.metric(
@@ -621,7 +632,7 @@ if df_gold is not None:
                 value=f"{discentes_salvos:,} discentes",
                 delta=f"-{taxa_evasao_atual - taxa_evasao_projetada:.1f}% na evasão",
                 delta_color="normal",
-                help="Quantidade estimada de estudantes que seriam diplomados em vez de desligados/evadidos.",
+                help="Quantidade estimada de estudantes que concluirão a graduação em vez de desistir/serem desligados.",
             )
         with r3:
             st.metric(
@@ -633,11 +644,11 @@ if df_gold is not None:
             )
         with r4:
             st.metric(
-                label="Equivalente em Novas Bolsas",
-                value=f"{bolsas_equivalentes:,} bolsas/ano",
-                delta="Potencial de reinvestimento",
-                delta_color="off",
-                help="Quantidade de bolsas de assistência/PIBIC de R$ 700/mês que a economia orçamentária gerada poderia custear.",
+                label="Saldo Líquido Poupado",
+                value=f"R$ {saldo_liquido:,.2f}" if abs(saldo_liquido) < 1e6 else f"R$ {saldo_liquido/1e6:.2f} Mi",
+                delta=f"ROI Social: {roi_social:.1f}x o investido",
+                delta_color="normal" if saldo_liquido >= 0 else "inverse",
+                help="Benefício público total subtraído do custo das novas bolsas concedidas.",
             )
 
         st.markdown("---")
@@ -663,23 +674,30 @@ if df_gold is not None:
             st.plotly_chart(fig_comp, use_container_width=True)
 
         with col_v2:
-            st.markdown("##### 💵 Balanço do Retorno Social do Investimento Público")
-            custo_ampliacao_pibic = float(pibic_projetos * (aumento_pibic_pct / 100.0) * 8400.0)
-            saldo_liquido = economia_retencao_reais - custo_ampliacao_pibic
-            
+            st.markdown("##### 💵 Balanço Custo-Benefício da Intervenção (R$)")
             df_waterfall = pd.DataFrame({
-                "Categoria": ["Economia Bruta (Retenção)", "Investimento Adicional PIBIC", "Saldo Líquido Poupado"],
-                "Valor": [economia_retencao_reais, -custo_ampliacao_pibic, saldo_liquido],
+                "Componente": [
+                    "Economia (Atraso Evitado)",
+                    "Retorno (Evasão Evitada)",
+                    "Custo (Novas Bolsas)",
+                    "Saldo Líquido Real",
+                ],
+                "Valor (R$)": [
+                    economia_retencao_reais,
+                    valor_evasao_evitada_reais,
+                    -custo_ampliacao_pibic,
+                    saldo_liquido,
+                ],
             })
             fig_waterfall = px.bar(
                 df_waterfall,
-                x="Categoria",
-                y="Valor",
-                color="Valor",
+                x="Componente",
+                y="Valor (R$)",
+                color="Valor (R$)",
                 color_continuous_scale=["#DC2626", "#10B981"],
                 text_auto=",.0f",
                 height=380,
-                title="Balanço Orçamentário da Intervenção (R$)",
+                title="Balanço Orçamentário e Retorno Social",
             )
             fig_waterfall.update_layout(coloraxis_showscale=False)
             st.plotly_chart(fig_waterfall, use_container_width=True)
@@ -706,14 +724,17 @@ if df_gold is not None:
 
 ### 2. Parâmetros da Simulação Aplicada
 * **Meta de Redução de Atraso Médio**: {reducao_semestres:.2f} semestres (via oferta de turmas de disciplinas-filtro, nivelamento e monitoria).
-* **Expansão de Bolsas de Permanência / IC**: +{aumento_pibic_pct}%
+* **Expansão de Bolsas de Permanência / IC**: +{aumento_pibic_pct}% ({novas_bolsas_pibic:,} bolsas adicionais)
 * **Custo Orçamentário Referência (TCU / UnB)**: R$ {custo_anual_aluno:,.2f} / aluno-ano (R$ {custo_semestral:,.2f}/semestre)
 
-### 3. Impacto Estimado da Intervenção
-* **Economia aos Cofres Públicos**: R$ {economia_retencao_reais:,.2f}
-* **Estudantes Preservados da Evasão**: {discentes_salvos:,} discentes
+### 3. Impacto Estimado da Intervenção (Análise Custo-Benefício)
+* **Economia por Formatura Ágil (Atraso Evitado)**: R$ {economia_retencao_reais:,.2f} ({semestres_poupados_totais:,.0f} semestres poupados)
+* **Capital Público Preservado (Evasão Evitada)**: R$ {valor_evasao_evitada_reais:,.2f} ({discentes_salvos:,} discentes diplomados)
+* **Benefício Público Total**: R$ {beneficio_total_reais:,.2f}
+* **Investimento em Novas Bolsas (+{aumento_pibic_pct}%)**: R$ {custo_ampliacao_pibic:,.2f}
+* **Saldo Líquido aos Cofres Públicos**: R$ {saldo_liquido:,.2f}
+* **Retorno Social do Investimento (ROI Social)**: {roi_social:.1f}x o montante investido
 * **Novo Tempo Médio Real Projetado**: {tempo_real_projetado:.2f} semestres
-* **Potencial de Reinvestimento Social**: A economia orçamentária gerada viabiliza o custeio de até {bolsas_equivalentes:,} novas bolsas anuais de permanência de R$ 700/mês (R$ 8.400/ano).
 
 ---
 *Documento gerado automaticamente pelo Observatório de Retenção e Formatura da UnB.*
