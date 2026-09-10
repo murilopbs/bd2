@@ -118,6 +118,7 @@ tab_choice = st.sidebar.radio(
         "🔍 Detalhe por Curso",
         "⚖️ Noturno vs. Diurno & Turnos",
         "🔬 PIBIC & Inclusão Social na Ciência",
+        "💡 Simulador What-If & Custo da Retenção",
         "🛠️ Auditoria & Qualidade de Dados",
         "⚠️ O Que Este Dado NÃO Responde",
     ],
@@ -507,6 +508,222 @@ if df_gold is not None:
             )
         else:
             st.warning("Dados analíticos do PIBIC não encontrados na camada Gold. Execute `build_gold.py`.")
+
+    elif tab_choice == "💡 Simulador What-If & Custo da Retenção":
+        st.subheader("💡 Simulador What-If de Decisão do DEG & Impacto Orçamentário")
+        st.markdown(
+            "Ferramenta de **Análise Prescritiva** para apoiar o Decanato de Ensino de Graduação (DEG) e Coordenações de Curso: "
+            "simule intervenções pedagógicas e fomento à permanência, projetando a redução da retenção, a economia pública em Reais (R$) e o potencial de novas bolsas."
+        )
+
+        # Seletor de Escopo: Curso Específico ou UnB Global
+        escopo = st.radio(
+            "Escopo da Simulação:",
+            ["🏛️ Curso Específico", "🌐 Toda a Universidade de Brasília (Global)"],
+            horizontal=True,
+        )
+
+        if escopo == "🏛️ Curso Específico":
+            curso_sim = st.selectbox(
+                "Selecione o Curso para Simulação:",
+                options=df_gold["curso"].unique(),
+                index=0,
+            )
+            df_curr = df_gold[df_gold["curso"] == curso_sim].iloc[0]
+            
+            nome_curso = df_curr["curso"]
+            total_discentes = int(df_curr["total_discentes_registrados"])
+            total_formados = int(df_curr["total_formados"])
+            taxa_evasao_atual = float(df_curr["taxa_evasao_pct"])
+            desvio_medio_atual = float(df_curr["desvio_medio_semestres"]) if pd.notna(df_curr["desvio_medio_semestres"]) else 0.0
+            sem_ideal = float(df_curr["semestre_ideal_previsto"])
+            tempo_real_atual = float(df_curr["tempo_medio_real_semestres"]) if pd.notna(df_curr["tempo_medio_real_semestres"]) else sem_ideal
+            pibic_projetos = int(df_curr.get("pibic_total_projetos", 0))
+        else:
+            nome_curso = "Toda a UnB (Graduação Consolidada)"
+            total_discentes = int(df_gold["total_discentes_registrados"].sum())
+            total_formados = int(df_gold["total_formados"].sum())
+            desvio_medio_atual = float(global_meta.get("desvio_medio_global_semestres", 2.1))
+            tempo_real_atual = float(global_meta.get("tempo_medio_formatura_global_semestres", 11.2))
+            sem_ideal = max(4.0, tempo_real_atual - desvio_medio_atual)
+            taxa_evasao_atual = float((df_gold["total_evadidos_desligados"].sum() / total_discentes * 100)) if total_discentes else 35.0
+            pibic_projetos = int(df_gold.get("pibic_total_projetos", pd.Series([0])).sum())
+
+        st.markdown("---")
+        
+        # Painel de Parâmetros de Intervenção (What-If)
+        col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
+        with col_ctrl1:
+            st.markdown("##### ⏱️ 1. Pré-requisitos & Oferta")
+            max_slider = float(max(0.5, min(3.0, desvio_medio_atual if desvio_medio_atual > 0 else 1.0)))
+            val_slider = float(min(1.0, max_slider))
+            reducao_semestres = st.slider(
+                "Meta de redução no atraso de formatura (semestres):",
+                min_value=0.0,
+                max_value=max_slider,
+                value=val_slider,
+                step=0.25,
+                help="Ações: flexibilização de cadeias de pré-requisitos, monitoria em disciplinas-filtro (Cálculo, APC) e turmas de verão.",
+            )
+        with col_ctrl2:
+            st.markdown("##### 🔬 2. Fomento ao PIBIC & Apoio")
+            aumento_pibic_pct = st.slider(
+                "Aumento na oferta de bolsas de IC / Permanência (%):",
+                min_value=0,
+                max_value=100,
+                value=25,
+                step=5,
+                help="Com base na elasticidade empírica calculada (r = -0.51), bolsas acadêmicas reduzem a probabilidade de evasão.",
+            )
+        with col_ctrl3:
+            st.markdown("##### 💰 3. Custo Público por Aluno")
+            custo_anual_aluno = st.number_input(
+                "Custo médio anual por aluno (R$) [TCU / UnB]:",
+                min_value=15000,
+                max_value=70000,
+                value=38500,
+                step=2500,
+                help="Valor médio de referência do TCU e Relatório de Gestão da UnB (~R$ 38.500/ano = R$ 19.250 por semestre por aluno).",
+            )
+
+        custo_semestral = custo_anual_aluno / 2.0
+        
+        # Modelagem Matemática Prescritiva
+        # 1. Economia gerada pela redução de semestres excedentes
+        semestres_poupados_totais = total_formados * reducao_semestres
+        economia_retencao_reais = semestres_poupados_totais * custo_semestral
+        
+        # 2. Redução de evasão projetada (fórmula com amortecimento empírico)
+        fator_reducao_evasao = (aumento_pibic_pct / 100.0) * 0.25
+        taxa_evasao_projetada = max(5.0, taxa_evasao_atual * (1.0 - fator_reducao_evasao))
+        discentes_salvos = int(round(total_discentes * (taxa_evasao_atual - taxa_evasao_projetada) / 100.0))
+        
+        # 3. Potencial de Reinvestimento Social (Bolsas de R$ 700/mês = R$ 8.400/ano)
+        bolsas_equivalentes = int(economia_retencao_reais / 8400.0) if economia_retencao_reais > 0 else 0
+        tempo_real_projetado = max(sem_ideal, tempo_real_atual - reducao_semestres)
+
+        st.markdown("---")
+        st.markdown(f"#### 🎯 Resultados da Simulação para: **{nome_curso}**")
+
+        # 4 Cards de Impacto de Gestão
+        r1, r2, r3, r4 = st.columns(4)
+        with r1:
+            st.metric(
+                label="Economia Orçamentária Pública",
+                value=f"R$ {economia_retencao_reais:,.2f}" if economia_retencao_reais < 1e6 else f"R$ {economia_retencao_reais/1e6:.2f} Mi",
+                delta=f"-{semestres_poupados_totais:,.0f} semestres excedentes",
+                delta_color="normal",
+                help="Recursos públicos poupados ao evitar que discentes fiquem retidos além do prazo regulamentar consumindo infraestrutura.",
+            )
+        with r2:
+            st.metric(
+                label="Discentes Salvos da Evasão",
+                value=f"{discentes_salvos:,} discentes",
+                delta=f"-{taxa_evasao_atual - taxa_evasao_projetada:.1f}% na evasão",
+                delta_color="normal",
+                help="Quantidade estimada de estudantes que seriam diplomados em vez de desligados/evadidos.",
+            )
+        with r3:
+            st.metric(
+                label="Novo Tempo Médio Real",
+                value=f"{tempo_real_projetado:.2f} sem.",
+                delta=f"-{reducao_semestres:.2f} semestres",
+                delta_color="normal",
+                help="Novo tempo médio estimado de integralização curricular.",
+            )
+        with r4:
+            st.metric(
+                label="Equivalente em Novas Bolsas",
+                value=f"{bolsas_equivalentes:,} bolsas/ano",
+                delta="Potencial de reinvestimento",
+                delta_color="off",
+                help="Quantidade de bolsas de assistência/PIBIC de R$ 700/mês que a economia orçamentária gerada poderia custear.",
+            )
+
+        st.markdown("---")
+
+        # Visualização Gráfica do Antes vs. Depois
+        col_v1, col_v2 = st.columns(2)
+        with col_v1:
+            st.markdown("##### 📊 Comparativo: Cenário Atual vs. Cenário Projetado")
+            df_comp = pd.DataFrame([
+                {"Métrica": "Tempo de Formatura (Semestres)", "Cenário Atual": tempo_real_atual, "Cenário Projetado": tempo_real_projetado},
+                {"Métrica": "Taxa de Evasão (%)", "Cenário Atual": taxa_evasao_atual, "Cenário Projetado": taxa_evasao_projetada},
+            ])
+            fig_comp = px.bar(
+                df_comp.melt(id_vars="Métrica", var_name="Cenário", value_name="Valor"),
+                x="Métrica",
+                y="Valor",
+                color="Cenário",
+                barmode="group",
+                text_auto=".1f",
+                height=380,
+                color_discrete_map={"Cenário Atual": "#94A3B8", "Cenário Projetado": "#1E40AF"},
+            )
+            st.plotly_chart(fig_comp, use_container_width=True)
+
+        with col_v2:
+            st.markdown("##### 💵 Balanço do Retorno Social do Investimento Público")
+            custo_ampliacao_pibic = float(pibic_projetos * (aumento_pibic_pct / 100.0) * 8400.0)
+            saldo_liquido = economia_retencao_reais - custo_ampliacao_pibic
+            
+            df_waterfall = pd.DataFrame({
+                "Categoria": ["Economia Bruta (Retenção)", "Investimento Adicional PIBIC", "Saldo Líquido Poupado"],
+                "Valor": [economia_retencao_reais, -custo_ampliacao_pibic, saldo_liquido],
+            })
+            fig_waterfall = px.bar(
+                df_waterfall,
+                x="Categoria",
+                y="Valor",
+                color="Valor",
+                color_continuous_scale=["#DC2626", "#10B981"],
+                text_auto=",.0f",
+                height=380,
+                title="Balanço Orçamentário da Intervenção (R$)",
+            )
+            fig_waterfall.update_layout(coloraxis_showscale=False)
+            st.plotly_chart(fig_waterfall, use_container_width=True)
+
+        # Caixa de Exportação de Dossiê Executivo para o Colegiado
+        st.markdown("---")
+        st.markdown("##### 📄 Exportação de Dossiê Executivo do Cenário para o Colegiado / NDE")
+        st.markdown("Gere um memorando técnico estruturado para apoiar reuniões do Decanato ou do Núcleo Docente Estruturante do curso:")
+
+        texto_dossie = f"""# MEMORANDO TÉCNICO DE GESTÃO ACADÊMICA — DEG / UnB
+**Destinatário**: Coordenação de Curso e Núcleo Docente Estruturante (NDE)
+**Objeto**: Simulação de Intervenção Pedagógica e Redução de Retenção — {nome_curso}
+**Data de Emissão**: {pd.Timestamp.now().strftime('%d/%m/%Y')}
+**Origem**: Observatório de Retenção e Formatura da UnB (Medalhão Dados Abertos)
+
+---
+
+### 1. Diagnóstico da Situação Atual
+* **Total de Discentes Auditados no Histórico**: {total_discentes:,}
+* **Tempo Ideal Previsto na Matriz Curricular**: {sem_ideal:.1f} semestres
+* **Tempo Médio Real Observado na Formatura**: {tempo_real_atual:.2f} semestres
+* **Atraso Médio de Conclusão**: {desvio_medio_atual:.2f} semestres além da matriz
+* **Taxa de Evasão e Desligamento**: {taxa_evasao_atual:.1f}%
+
+### 2. Parâmetros da Simulação Aplicada
+* **Meta de Redução de Atraso Médio**: {reducao_semestres:.2f} semestres (via oferta de turmas de disciplinas-filtro, nivelamento e monitoria).
+* **Expansão de Bolsas de Permanência / IC**: +{aumento_pibic_pct}%
+* **Custo Orçamentário Referência (TCU / UnB)**: R$ {custo_anual_aluno:,.2f} / aluno-ano (R$ {custo_semestral:,.2f}/semestre)
+
+### 3. Impacto Estimado da Intervenção
+* **Economia aos Cofres Públicos**: R$ {economia_retencao_reais:,.2f}
+* **Estudantes Preservados da Evasão**: {discentes_salvos:,} discentes
+* **Novo Tempo Médio Real Projetado**: {tempo_real_projetado:.2f} semestres
+* **Potencial de Reinvestimento Social**: A economia orçamentária gerada viabiliza o custeio de até {bolsas_equivalentes:,} novas bolsas anuais de permanência de R$ 700/mês (R$ 8.400/ano).
+
+---
+*Documento gerado automaticamente pelo Observatório de Retenção e Formatura da UnB.*
+"""
+        st.download_button(
+            label=f"📥 Baixar Dossiê Técnico ({nome_curso}) [.md]",
+            data=texto_dossie,
+            file_name=f"dossie_deg_{nome_curso.lower().replace(' ', '_')}.md",
+            mime="text/markdown",
+        )
 
     elif tab_choice == "🛠️ Auditoria & Qualidade de Dados":
         st.subheader("🛠️ Auditoria de Qualidade de Dados Abertos (Dia 4 - S1)")
