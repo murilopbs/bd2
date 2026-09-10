@@ -91,6 +91,7 @@ jobs:
             docs/caderno_analise.md
             docs/datasheet_gold.md
             docs/dicionario_dados_gold.md
+            docs/analise_social_pibic.md
 
   deploy:
     needs: pipeline
