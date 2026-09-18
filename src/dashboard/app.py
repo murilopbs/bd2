@@ -43,6 +43,8 @@ else:
 LABELS_PT = {
     "turno": "Turno",
     "categoria_grau": "Grau Acadêmico",
+    "campus": "Campus",
+    "total_discentes_registrados": "Total de Discentes Registrados",
     "taxa_evasao_pct": "Taxa de Evasão (%)",
     "taxa_formatura_pct": "Taxa de Formatura (%)",
     "tempo_medio_real_semestres": "Tempo Médio Real (semestres)",
@@ -468,6 +470,54 @@ if df_gold is not None:
             fig_grau_tempo.update_layout(legend_title_text="")
             fig_grau_tempo.update_traces(hovertemplate="<b>%{fullData.name}</b>: %{y:.1f} sem.<extra></extra>")
             st.plotly_chart(fig_grau_tempo, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("🏫 Comparativo de Formatura e Evasão por Campus")
+        st.markdown(
+            "Taxa de evasão ponderada pelo total de discentes registrados em cada campus (soma de evadidos/desligados dividida pela soma de matriculados)."
+        )
+
+        df_campus = df_gold.groupby("campus").agg(
+            total_discentes_registrados=("total_discentes_registrados", "sum"),
+            total_evadidos_desligados=("total_evadidos_desligados", "sum"),
+            total_formados=("total_formados", "sum"),
+        ).reset_index()
+        df_campus["taxa_evasao_pct"] = (
+            df_campus["total_evadidos_desligados"] / df_campus["total_discentes_registrados"] * 100
+        )
+        df_campus["taxa_formatura_pct"] = (
+            df_campus["total_formados"] / df_campus["total_discentes_registrados"] * 100
+        )
+        df_campus = df_campus.sort_values("taxa_evasao_pct", ascending=False)
+
+        c5, c6 = st.columns(2)
+        with c5:
+            fig_campus_evas = px.bar(
+                df_campus,
+                x="campus",
+                y="taxa_evasao_pct",
+                title="Taxa de Evasão por Campus (%)",
+                color="campus",
+                labels=LABELS_PT,
+                text_auto=".1f",
+                height=420,
+            )
+            fig_campus_evas.update_layout(showlegend=False)
+            st.plotly_chart(fig_campus_evas, use_container_width=True)
+
+        with c6:
+            fig_campus_alunos = px.bar(
+                df_campus,
+                x="campus",
+                y="total_discentes_registrados",
+                title="Total de Discentes Registrados por Campus",
+                color="campus",
+                labels=LABELS_PT,
+                text_auto=True,
+                height=420,
+            )
+            fig_campus_alunos.update_layout(showlegend=False)
+            st.plotly_chart(fig_campus_alunos, use_container_width=True)
 
     elif tab_choice == "🔬 PIBIC & Inclusão Social na Ciência":
         st.subheader("🔬 Iniciação Científica & Democratização da Ciência na UnB (PIBIC / PIVIC)")
