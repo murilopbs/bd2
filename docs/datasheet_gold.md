@@ -16,7 +16,7 @@
 - **O que cada instância representa?**
   Cada linha representa um curso canônico de graduação da Universidade de Brasília com métricas agregadas de retenção, tempo médio real de formatura, percentuais de pontualidade e taxas de desligamento.
 - **Quantas instâncias existem no dataset?**
-  76 cursos de graduação consolidados (com supressão ética de cursos com menos de 5 registros para proteção de privacidade).
+  95 cursos de graduação consolidados na carga de 03/11/2026 (67 bacharelados, 13 licenciaturas e 15 com oferta mista), com supressão ética de cursos com menos de 5 registros para proteção de privacidade. A atualização mensal pode mudar esse número.
 - **O dataset contém dados confidenciais ou LGPD?**
   Não. Todas as variáveis sensíveis (data de nascimento, raça, sexo e cota) foram descartadas e o dataset expõe exclusivamente agregados estatísticos por curso.
 
@@ -25,11 +25,12 @@
 ## 3. Processo de Coleta e Proveniência (Collection Process)
 - **Como os dados foram obtidos?**
   Extraídos programaticamente via API CKAN 2.11 do portal [dados.unb.br](https://dados.unb.br) a partir de três pacotes abertos:
-  1. *dados-referente-aos-alunos-de-graduacao-pos-graduacao-latu-sensu-mestrado-e-doutorado* (`sigra.csv`);
-  2. *estrutura-curricular* (`estrutura-curricular.csv`);
-  3. *cursos-de-graduacao* (`curso_graduacao.csv`).
+  1. *dados-referente-aos-alunos-de-graduacao-pos-graduacao-latu-sensu-mestrado-e-doutorado* (`sigra.csv`, sistema legado, e `sigaa.csv`, sistema atual; os arquivos `SIGAA_Concluintes_*` do mesmo pacote têm nome e CPF parcial e não são baixados);
+  2. *lista-de-discentes-de-graduacao-pos-graduacao-latu-sensu-mestrado-e-doutorado* (`sigaa_ativos_AAAA_S.csv`, ativos do semestre mais recente; só curso, grau e período de ingresso são gravados, nome e CPF são descartados em memória);
+  3. *estrutura-curricular* (`estrutura-curricular.csv`);
+  4. *cursos-de-graduacao* (todas as versões publicadas, de `curso_graduacao.csv` a `cursos-de-graduao-08-2024.csv`; a mais recente vale).
 - **Qual foi o período temporal de cobertura?**
-  Cobre históricos de discentes que ingressaram e concluíram seus ciclos acadêmicos entre 2010 e os semestres mais recentes consolidados no SIGRA.
+  Ingressos de 2010 a 2024 na Silver (SIGRA com saídas até 2020/1; SIGAA com a situação em 07/2024). As taxas da Gold usam as coortes com pelo menos 8 anos de acompanhamento (hoje 2010-2016). Um workflow mensal (`.github/workflows/atualiza-dados.yml`) reprocessa as fontes e versiona a Gold quando elas mudam.
 
 ---
 
@@ -37,7 +38,7 @@
 - **Quais transformações foram aplicadas?**
   1. *Decodificação*: Correção de encoding `ISO-8859-1` / `Latin-1` na estrutura curricular.
   2. *Normalização Textual*: Remoção de acentuação (NFKD), conversão para caixa alta e strip de espaços contínuos e padding de final de linha.
-  3. *Mapeamento Canônico*: Aplicação de dicionário de sinônimos para especializações e habilitações de cursos, elevando a taxa de casamento dos joins para 97.54%.
+  3. *Mapeamento Canônico*: Aplicação de dicionário de sinônimos para especializações e habilitações de cursos, elevando a taxa de casamento dos joins para 100%.
   4. *Incerteza Temporal*: O cálculo do tempo de permanência assume o semestre 1 como baseline na ausência do semestre de ingresso, com incerteza metodológica de $\pm 1$ semestre explicitada.
 
 ---

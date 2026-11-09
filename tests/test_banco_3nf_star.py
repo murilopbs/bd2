@@ -1,0 +1,360 @@
+"""
+Testes de integração da Silver 3NF e do Star Schema da gold (precisam de PostgreSQL).
+
+Dois grupos:
+  - TestRestricoes3NFStar: restrições do esquema (unicidade, FK, partição DEFAULT, k >= 5, chave
+    natural e versões da dim_curso). Só precisam das migrações: cada teste cria as próprias linhas numa
+    transação desfeita no fim, e roda num banco vazio.
+  - TestCarga3NFStar: conferem o resultado de src/db/povoar_dimensional.py contra as tabelas de
+    origem. São pulados se a silver não foi carregada (ex.: banco só com a gold).
+
+Pulados se o banco não estiver no ar.
+
+Uso:
+    python3 -m unittest tests/test_banco_3nf_star.py
+"""
+
+import sys
+import unittest
+from pathlib import Path
+
+import psycopg
+from psycopg import Rollback, errors
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
+from src.db.atualizar_view_painel import SilverNaoCarregada, atualizar_view_painel  # noqa: E402
+from src.db.conexao import conectar  # noqa: E402
+from src.db.migrar import aplicar_migracoes  # noqa: E402
+from src.db.povoar_dimensional import povoar_gold_dimensional  # noqa: E402
+from src.db.povoar_silver_3nf import povoar_silver_3nf, silver_carregada  # noqa: E402
+
+
+# Chaves substitutas de dim_curso e dim_perfil_social, que a recarga não pode mudar.
+SQL_CHAVES = """
+    SELECT 'curso', nome_curso || '|' || vigente_de, sk_curso FROM gold.dim_curso
+    UNION ALL
+    SELECT 'perfil', concat_ws('|', perfil_macro, categoria_cota, faixa_renda, is_cotista), sk_perfil
+    FROM gold.dim_perfil_social
+    ORDER BY 1, 2
+"""
+
+
+def _conectar() -> psycopg.Connection:
+    try:
+        conn = conectar(autocommit=True, connect_timeout=3)
+    except psycopg.OperationalError as erro:
+        raise unittest.SkipTest(f"Banco indisponível ({erro}). Suba com: docker compose up -d db")
+    aplicar_migracoes()
+    return conn
+
+
+class TestRestricoes3NFStar(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = _conectar()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.conn.close()
+
+    def inserir_vinculo(self, ano_ingresso: int, id_curso: int, id_estrutura: int) -> int:
+        """Cria discente e vínculo de teste; devolve o id do discente."""
+        id_discente = self.conn.execute(
+            "INSERT INTO silver.discentes (pseudonimo) VALUES ('TESTE_3NF') RETURNING id_discente").fetchone()[0]
+        self.conn.execute(
+            """
+            INSERT INTO silver.movimentacoes_vinculos (id_discente, id_curso, id_estrutura, ano_ingresso,
+                                                       tipo_saida_grupo, fonte)
+            VALUES (%s, %s, %s, %s, 'FORMATURA', 'SIGRA')
+            """,
+            (id_discente, id_curso, id_estrutura, ano_ingresso),
+        )
+        return id_discente
+
+    def criar_curso(self) -> int:
+        """Cria curso e matriz de teste (id_curso -1); devolve o id da matriz."""
+        self.conn.execute(
+            """
+            INSERT INTO silver.cursos (id_curso, nome_curso_norm, campus, turno, grau_academico, categoria_grau,
+                                       area_conhecimento)
+            VALUES (-1, 'CURSO TESTE', 'DARCY RIBEIRO', 'DIURNO', 'BACHARELADO', 'BACHARELADO', 'TESTE')
+            """
+        )
+        return self.conn.execute(
+            """
+            INSERT INTO silver.estruturas_curriculares (id_curso, nome_curso_canonico, semestre_minimo,
+                                                        semestre_ideal, semestre_maximo)
+            VALUES (-1, 'CURSO TESTE', 6, 8, 14) RETURNING id_estrutura
+            """
+        ).fetchone()[0]
+
+    def test_01_discente_duplicado_e_rejeitado(self):
+        with self.conn.transaction():
+            self.conn.execute("INSERT INTO silver.discentes (pseudonimo) VALUES ('TESTE_3NF')")
+            with self.assertRaises(errors.UniqueViolation), self.conn.transaction():
+                self.conn.execute("INSERT INTO silver.discentes (pseudonimo) VALUES ('TESTE_3NF')")
+            raise Rollback()
+
+    def test_02_vinculo_com_curso_inexistente_e_rejeitado(self):
+        with self.conn.transaction():
+            id_estrutura = self.criar_curso()
+            with self.assertRaises(errors.ForeignKeyViolation), self.conn.transaction():
+                self.inserir_vinculo(2018, 999_999, id_estrutura)
+            raise Rollback()
+
+    def test_03_ingresso_fora_das_particoes_cai_na_default(self):
+        with self.conn.transaction():
+            id_discente = self.inserir_vinculo(1995, -1, self.criar_curso())
+            particao = self.conn.execute(
+                "SELECT tableoid::regclass::text FROM silver.movimentacoes_vinculos WHERE id_discente = %s",
+                (id_discente,),
+            ).fetchone()[0]
+            self.assertEqual(particao, "silver.movimentacoes_p_default")
+            raise Rollback()
+
+    def test_04_fato_com_menos_de_5_ingressantes_e_rejeitado(self):
+        with self.conn.transaction():
+            sk_curso = self.conn.execute(
+                """
+                INSERT INTO gold.dim_curso (nome_curso, grau_academico, categoria_grau, area_conhecimento)
+                VALUES ('CURSO TESTE', 'BACHARELADO', 'BACHARELADO', 'TESTE') RETURNING sk_curso
+                """
+            ).fetchone()[0]
+            sk_campus = self.conn.execute(
+                "INSERT INTO gold.dim_campus (campus, regiao_admin) VALUES ('CAMPUS TESTE', 'TESTE') RETURNING sk_campus"
+            ).fetchone()[0]
+            with self.assertRaises(errors.CheckViolation), self.conn.transaction():
+                self.conn.execute(
+                    """
+                    INSERT INTO gold.fato_retencao_curso (sk_curso, sk_campus, total_ingressantes, total_formados,
+                                                          total_evadidos)
+                    VALUES (%s, %s, 3, 2, 1)
+                    """,
+                    (sk_curso, sk_campus),
+                )
+            raise Rollback()
+
+    def test_05_curso_novo_nao_muda_a_chave_dos_existentes(self):
+        """A chave substituta segue a chave natural: um curso que entra antes na ordem alfabética não desloca as outras."""
+        inserir = """
+            INSERT INTO gold.dim_curso (nome_curso, grau_academico, categoria_grau, area_conhecimento)
+            VALUES (%s, 'BACHARELADO', 'BACHARELADO', 'TESTE')
+            RETURNING sk_curso
+        """
+        with self.conn.transaction():
+            sk_antes = self.conn.execute(inserir, ("ZZ CURSO TESTE",)).fetchone()[0]
+            self.conn.execute(inserir, ("AA CURSO TESTE",))
+            sk_depois = self.conn.execute(
+                "SELECT sk_curso FROM gold.dim_curso WHERE nome_curso = 'ZZ CURSO TESTE' AND is_atual"
+            ).fetchone()[0]
+            self.assertEqual(sk_antes, sk_depois)
+            raise Rollback()
+
+    def test_06_refresh_da_view_e_recusado_com_fato_vazio(self):
+        """Carga que deixou a gold vazia não pode esvaziar a view do painel."""
+        with self.conn.transaction():
+            self.conn.execute("DELETE FROM gold.fato_retencao_curso")
+            with self.assertRaises(errors.RaiseException), self.conn.transaction():
+                self.conn.execute("CALL gold.atualizar_mv_dashboard_executivo()")
+            raise Rollback()
+
+    def particao_do_discente(self, id_discente: int) -> str:
+        return self.conn.execute(
+            "SELECT tableoid::regclass::text FROM silver.movimentacoes_vinculos WHERE id_discente = %s",
+            (id_discente,),
+        ).fetchone()[0]
+
+    def test_07_anos_novos_vao_para_particao_dedicada(self):
+        with self.conn.transaction():
+            criadas = [p for (p,) in self.conn.execute(
+                "SELECT silver.provisionar_particoes_movimentacoes(2040)").fetchall()]
+            self.assertEqual(criadas, ["silver.movimentacoes_p2035_2039", "silver.movimentacoes_p2040_2044",
+                                       "silver.movimentacoes_p2045_2049"])
+            id_discente = self.inserir_vinculo(2042, -1, self.criar_curso())
+            self.assertEqual(self.particao_do_discente(id_discente), "silver.movimentacoes_p2040_2044")
+            # Idempotente: a segunda chamada não cria nada.
+            self.assertEqual(self.conn.execute(
+                "SELECT silver.provisionar_particoes_movimentacoes(2040)").fetchall(), [])
+            raise Rollback()
+
+    def test_08_vinculo_que_caiu_na_default_e_movido_para_a_particao_nova(self):
+        with self.conn.transaction():
+            id_discente = self.inserir_vinculo(2036, -1, self.criar_curso())
+            self.assertEqual(self.particao_do_discente(id_discente), "silver.movimentacoes_p_default")
+            self.conn.execute("SELECT silver.provisionar_particoes_movimentacoes(2030)")
+            self.assertEqual(self.particao_do_discente(id_discente), "silver.movimentacoes_p2035_2039")
+            raise Rollback()
+
+    def test_09_curso_em_dois_campi_no_fato_de_retencao_e_rejeitado(self):
+        """O grão é o curso: uma segunda linha do mesmo curso em outro campus seria contada duas vezes."""
+        with self.conn.transaction():
+            sk_curso = self.conn.execute(
+                """
+                INSERT INTO gold.dim_curso (nome_curso, grau_academico, categoria_grau, area_conhecimento)
+                VALUES ('CURSO TESTE', 'BACHARELADO', 'BACHARELADO', 'TESTE') RETURNING sk_curso
+                """
+            ).fetchone()[0]
+            campi = [self.conn.execute(
+                "INSERT INTO gold.dim_campus (campus, regiao_admin) VALUES (%s, 'TESTE') RETURNING sk_campus",
+                (campus,)).fetchone()[0] for campus in ("CAMPUS TESTE 1", "CAMPUS TESTE 2")]
+            inserir = """
+                INSERT INTO gold.fato_retencao_curso (sk_curso, sk_campus, total_ingressantes, total_formados,
+                                                      total_evadidos)
+                VALUES (%s, %s, 10, 6, 3)
+            """
+            self.conn.execute(inserir, (sk_curso, campi[0]))
+            with self.assertRaises(errors.UniqueViolation), self.conn.transaction():
+                self.conn.execute(inserir, (sk_curso, campi[1]))
+            raise Rollback()
+
+    def test_10_cada_fato_declara_o_grao_no_catalogo(self):
+        """O grão fica no COMMENT ON TABLE, que o dicionário de dados publica (migração 0023)."""
+        for tabela in ("gold.fato_retencao_curso", "gold.fato_alunos_ativos", "gold.fato_pibic_perfil",
+                       "gold.mv_dashboard_executivo"):
+            with self.subTest(tabela=tabela):
+                comentario = self.conn.execute("SELECT obj_description(%s::regclass, 'pg_class')",
+                                               (tabela,)).fetchone()[0] or ""
+                self.assertTrue(comentario.startswith("Grão: "), comentario)
+
+
+class TestCarga3NFStar(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = _conectar()
+        if not silver_carregada(cls.conn):
+            cls.conn.close()
+            raise unittest.SkipTest("silver não carregada (rode src/db/carregar.py)")
+        if not cls.um("SELECT EXISTS (SELECT 1 FROM gold.fato_retencao_curso)"):
+            cls.conn.close()
+            raise unittest.SkipTest("Star Schema vazio (rode src/db/povoar_dimensional.py)")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.conn.close()
+
+    @classmethod
+    def um(cls, sql: str):
+        return cls.conn.execute(sql).fetchone()[0]
+
+    def test_01_cada_vinculo_da_silver_vira_um_vinculo_3nf(self):
+        self.assertEqual(self.um("SELECT count(*) FROM silver.movimentacoes_vinculos"),
+                         self.um("SELECT count(*) FROM silver.discentes_graduacao"))
+        self.assertEqual(self.um("SELECT count(*) FROM silver.discentes"),
+                         self.um("SELECT count(DISTINCT aluno) FROM silver.discentes_graduacao"))
+
+    def test_02_fato_retencao_reconcilia_com_a_gold_do_pipeline(self):
+        """Métricas recalculadas da 3NF batem, curso a curso, com gold.retencao_cursos_unb.
+
+        Tolerâncias só para o arredondamento de meio (numeric do PostgreSQL arredonda 0,5 para cima).
+        """
+        divergentes = self.conn.execute(
+            """
+            SELECT coalesce(r.curso, dc.nome_curso)
+            FROM gold.retencao_cursos_unb r
+            FULL JOIN (gold.fato_retencao_curso f JOIN gold.dim_curso dc USING (sk_curso)
+                       JOIN gold.dim_campus camp USING (sk_campus)) ON dc.nome_curso = r.curso
+            WHERE f.total_ingressantes IS DISTINCT FROM r.total_discentes_registrados
+               OR f.total_formados IS DISTINCT FROM r.total_formados
+               OR f.total_evadidos IS DISTINCT FROM r.total_evadidos_desligados
+               OR f.total_ainda_ativos IS DISTINCT FROM r.total_ainda_ativos
+               OR camp.campus IS DISTINCT FROM r.campus
+               OR dc.categoria_grau IS DISTINCT FROM r.categoria_grau
+               OR dc.area_conhecimento IS DISTINCT FROM r.area_conhecimento
+               OR abs(f.taxa_formatura_pct - r.taxa_formatura_pct) > 0.01
+               OR abs(f.taxa_evasao_pct - r.taxa_evasao_pct) > 0.01
+               OR abs(f.formados_tempo_ideal_pct - r.formados_tempo_ideal_pct) > 0.01
+               OR abs(f.atraso_medio_semestres - r.desvio_medio_semestres) > 0.01
+               OR abs(f.indice_retencao_critica - r.indice_retencao_critica) > 0.1
+               OR f.classificacao_retencao IS DISTINCT FROM r.classificacao_retencao
+            """
+        ).fetchall()
+        self.assertEqual(divergentes, [])
+
+    def test_03_fato_alunos_ativos_cobre_a_gold_do_pipeline(self):
+        self.assertGreater(self.um("SELECT count(*) FROM gold.fato_alunos_ativos"), 0)
+        self.assertEqual(self.um("SELECT sum(total_ativos) FROM gold.fato_alunos_ativos"),
+                         self.um("SELECT sum(total_ativos_hoje) FROM gold.ativos_hoje_cursos_unb"))
+        self.assertGreater(self.um("SELECT sum(ativos_hoje_total) FROM gold.mv_dashboard_executivo"), 0)
+
+    def test_04_perfil_social_vem_dos_planos_de_ic(self):
+        faltantes = self.um(
+            """
+            SELECT count(*) FROM (
+              SELECT DISTINCT coalesce(perfil_social_macro, 'NAO INFORMADO') AS perfil_macro,
+                     coalesce(cota_detalhe, 'NAO INFORMADO') AS categoria_cota, faixa_renda, is_cotista
+              FROM silver.pibic_projetos
+              EXCEPT
+              SELECT perfil_macro, categoria_cota, faixa_renda, is_cotista FROM gold.dim_perfil_social
+            ) x
+            """
+        )
+        self.assertEqual(faltantes, 0)
+
+    def test_05_fato_pibic_perfil_respeita_k_anonimato(self):
+        self.assertGreater(self.um("SELECT count(*) FROM gold.fato_pibic_perfil"), 0)
+        self.assertEqual(self.um("SELECT count(*) FROM gold.fato_pibic_perfil WHERE total_projetos < 5"), 0)
+        self.assertLessEqual(self.um("SELECT sum(total_projetos) FROM gold.fato_pibic_perfil"),
+                             self.um("SELECT count(*) FROM silver.pibic_projetos"))
+
+    def test_06_view_materializada_tem_um_curso_terminal_por_fato(self):
+        self.conn.execute("CALL gold.atualizar_mv_dashboard_executivo()")
+        self.assertEqual(
+            self.um("SELECT count(*) FROM gold.mv_dashboard_executivo"),
+            self.um("SELECT count(*) FROM gold.fato_retencao_curso JOIN gold.dim_curso USING (sk_curso) "
+                    "WHERE NOT is_tronco_abi"),
+        )
+
+    def test_07_recarga_e_idempotente(self):
+        """Rodar o povoamento de novo não duplica linhas nem muda chaves (desfeito no fim)."""
+        with self.conn.transaction():
+            antes = povoar_silver_3nf(self.conn) | povoar_gold_dimensional(self.conn)
+            sks = self.conn.execute(SQL_CHAVES).fetchall()
+            depois = povoar_silver_3nf(self.conn) | povoar_gold_dimensional(self.conn)
+            self.assertEqual(antes, depois)
+            self.assertEqual(sks, self.conn.execute(SQL_CHAVES).fetchall())
+            raise Rollback()
+
+    def test_08_refresh_e_cancelado_se_a_carga_da_silver_falhou(self):
+        """Silver vazia (carga que falhou) impede o refresh, e a view segue com a versão anterior."""
+        gerada_antes = self.um("SELECT max(gerado_em) FROM gold.mv_dashboard_executivo")
+        for falha in ("DELETE FROM silver.discentes_graduacao",
+                      "TRUNCATE silver.movimentacoes_vinculos CASCADE"):
+            with self.subTest(falha=falha), self.conn.transaction():
+                self.conn.execute(falha)
+                with self.assertRaises(SilverNaoCarregada):
+                    atualizar_view_painel(self.conn)
+                raise Rollback()
+        self.assertEqual(self.um("SELECT max(gerado_em) FROM gold.mv_dashboard_executivo"), gerada_antes)
+
+    def test_09_detalhamento_por_curso_usa_o_indice_da_estrutura(self):
+        """A consulta de docs/explain/ não volta a varrer as partições inteiras (migração 0024)."""
+        sql = "\n".join(linha for linha in CONSULTA_EXPLAIN.read_text(encoding="utf-8").splitlines()
+                        if not linha.startswith("--"))
+        sql = sql.replace("EXPLAIN (ANALYZE, BUFFERS)", "EXPLAIN (FORMAT JSON)")
+        self.conn.execute("ANALYZE silver.movimentacoes_vinculos")
+        nos = list(_nos_do_plano(self.um(sql)[0]["Plan"]))
+        vinculos = [n for n in nos if n.get("Relation Name", "").startswith("movimentacoes_p")]
+        self.assertTrue(vinculos, "o plano não lê silver.movimentacoes_vinculos")
+        for no in vinculos:
+            with self.subTest(particao=no["Relation Name"]):
+                self.assertNotEqual(no["Node Type"], "Seq Scan")
+                # Index (Only) Scan traz o índice no próprio nó; Bitmap Heap Scan, logo depois de
+                # uma recarga, no Bitmap Index Scan filho.
+                indices = [n.get("Index Name", "") for n in _nos_do_plano(no)]
+                self.assertTrue(any("id_estrutura" in i for i in indices), indices)
+
+
+CONSULTA_EXPLAIN = BASE_DIR / "docs" / "explain" / "distribuicao_formatura_por_curso.sql"
+
+
+def _nos_do_plano(no: dict):
+    yield no
+    for filho in no.get("Plans", []):
+        yield from _nos_do_plano(filho)
+
+
+if __name__ == "__main__":
+    unittest.main()
