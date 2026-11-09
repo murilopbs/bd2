@@ -1,15 +1,14 @@
 name: Medalhão + Pages
 
 # Bronze -> Silver -> Gold a cada execução (prova o pipeline "roda do zero")
-# e publica o dashboard no GitHub Pages.
+# e publica o dashboard no GitHub Pages. A coleta mensal que versiona dados novos fica em
+# atualiza-dados.yml, que dispara este workflow quando algo muda.
 
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
-  schedule:
-    - cron: "0 6 * * 1" # toda segunda 06:00 UTC
 
 permissions:
   contents: read
@@ -23,6 +22,23 @@ concurrency:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: observatorio
+          POSTGRES_PASSWORD: observatorio
+          POSTGRES_DB: observatorio
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U observatorio -d observatorio"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://observatorio:observatorio@localhost:5432/observatorio
+      FASTEMBED_CACHE_PATH: ${{ github.workspace }}/.cache/fastembed
     steps:
       - uses: actions/checkout@v4
 
@@ -31,12 +47,21 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt -r requirements-orquestracao.txt
+
+      # Cada etapa lê a camada anterior do banco e grava a sua nele: não há CSV
+      # intermediário, e bronze/silver (dado pessoal) nunca saem do runner.
+      - name: "Banco — migrações do esquema (PostgreSQL)"
+        run: python src/db/migrar.py
 
       - name: "Bronze — ingestão via API CKAN"
-        env:
-          SKIP_DATASETS: sigaa # não é consumido por nenhuma etapa
         run: python src/ingestion/ckan_client.py
+
+      # O servidor do INEP tem quedas frequentes; sem o arquivo, a Silver e a Gold pulam o
+      # benchmark e o painel segue publicado sem o benchmark.
+      - name: "Bronze — Censo da Educação Superior (INEP)"
+        continue-on-error: true
+        run: python src/ingestion/inep_censo_superior.py
 
       - name: "Silver — limpeza, tipagem e normalização"
         run: python src/pipeline/transform_silver.py
@@ -50,32 +75,92 @@ jobs:
       - name: "Privacidade — k-anonimato (LGPD)"
         run: python src/privacy/lgpd_check.py
 
+      - name: "Banco — Silver 3NF e Star Schema"
+        run: python src/db/povoar_dimensional.py
+
+      # Só roda se as etapas anteriores passaram; o script ainda confere a Silver antes do refresh.
+      - name: "Gold — REFRESH CONCURRENTLY da view do painel"
+        run: python src/db/atualizar_view_painel.py
+
+      # Reconstrói do zero, a partir da Silver 3NF, as camadas staging, intermediate e marts
+      # (transform/, ADR 0029) e roda os testes de cada uma, inclusive a reconciliação com a gold.
+      - name: "Transformações dbt — staging, intermediate e marts"
+        run: bash scripts/dbt.sh build --full-refresh
+
+      - name: "dbt — documentação e linhagem"
+        run: bash scripts/dbt.sh docs generate --static
+
+      # O lago fica no runner, como bronze e silver: prova o export, não publica dado.
+      - name: "Lago — Silver 3NF e Star Schema em Delta Lake"
+        run: python src/db/exportar_lago.py
+
+      # O grafo do Dagster carrega (inclusive os modelos do dbt como assets), e o backfill das janelas
+      # do lago roda de verdade: todas as partições, numa execução, sobre o lago que acabou de ser gravado.
+      - name: "Orquestração — grafo do Dagster e backfill das janelas do lago"
+        env:
+          DAGSTER_HOME: ${{ runner.temp }}/dagster
+        run: |
+          mkdir -p "$DAGSTER_HOME"
+          dagster definitions validate -m orquestracao
+          INTERVALO=$(python -c 'from orquestracao.definicoes import INTERVALO_BACKFILL as i; print(i)')
+          dagster asset materialize -m orquestracao --select lago_vinculos_por_quinquenio --partition-range "$INTERVALO"
+
+      - name: "Cache do modelo de embedding"
+        uses: actions/cache@v4
+        with:
+          path: .cache/fastembed
+          key: fastembed-paraphrase-multilingual-MiniLM-L12-v2
+
+      - name: "Busca semântica — vetorização (pgvector)"
+        env:
+          # Os ~12,5 mil planos de IC levam vários minutos em CPU; no CI basta provar o fluxo.
+          VETORIZAR_TIPOS: curso,documentacao
+        run: python src/busca/vetorizar.py
+
+      - name: "Dicionário de dados do banco"
+        run: python src/db/gerar_dicionario.py
+
       - name: "Verificação determinística (contratos da Gold)"
         run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      # A view acabou de ser atualizada: confere o caminho do check e que nenhuma publicação do
+      # portal mais nova que a carga ficou de fora (docs/frescor_sla.md).
+      - name: "Frescor — SLA da view do painel"
+        run: python src/db/frescor.py --fonte
+
+      - name: "Supabase — sincronização incremental da gold"
+        if: github.event_name != 'pull_request'
+        env:
+          SUPABASE_DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+        run: python src/db/sincronizar_supabase.py
 
       - name: "Resumo do medalhão"
         run: |
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import csv, json, glob, os
+          import sys
+          sys.path.insert(0, ".")
+          from src.db.tabelas import consultar, ler_relatorio
 
-          def rows(path):
-              with open(path, newline="", encoding="utf-8", errors="replace") as f:
-                  return sum(1 for _ in f) - 1
-
-          print("## Camadas do medalhão\n")
-          print("| Camada | Arquivo | Linhas |")
+          print("## Camadas do medalhão (PostgreSQL)\n")
+          print("| Camada | Tabela | Linhas |")
           print("|---|---|---|")
-          for layer in ("bronze", "silver", "gold"):
-              for p in sorted(glob.glob(f"data/{layer}/*.csv")):
-                  print(f"| {layer} | `{os.path.basename(p)}` | {rows(p):,} |")
+          tabelas = consultar(
+              "SELECT table_schema, table_name FROM information_schema.tables "
+              "WHERE table_schema IN ('bronze', 'silver', 'gold') AND table_type = 'BASE TABLE' "
+              "ORDER BY array_position(ARRAY['bronze', 'silver', 'gold'], table_schema::text), table_name"
+          )
+          for esquema, nome in tabelas.values.tolist():
+              total = consultar(f'SELECT count(*) AS n FROM "{esquema}"."{nome}"').iloc[0]["n"]
+              print(f"| {esquema} | `{esquema}.{nome}` | {total:,} |")
 
-          with open("data/gold/relatorio_casamento_joins.json", encoding="utf-8") as f:
-              taxa = json.load(f).get("taxa_de_casamento_pct")
-          import pandas as pd
-          g = pd.read_csv("data/gold/retencao_cursos_unb.csv")
+          taxa = ler_relatorio("relatorio_casamento_joins")["taxa_de_casamento_pct"]
+          k = consultar("SELECT min(total_discentes_registrados) AS k FROM gold.retencao_cursos_unb").iloc[0]["k"]
           print(f"\n- Taxa de casamento dos joins: **{taxa}%**")
-          print(f"- Menor grupo publicado (k-anonimato): **{int(g['total_discentes_registrados'].min())}** discentes")
+          print(f"- Menor grupo publicado (k-anonimato): **{k}** discentes")
           PY
+
+      - name: "Export estático da gold para o GitHub Pages"
+        run: python src/db/exportar_gold.py
 
       - name: "Empacota dados públicos para o site"
         uses: actions/upload-artifact@v4
@@ -84,7 +169,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
           path: |
-            data/gold/
+            export/gold.json
             docs/relatorio_qualidade.md
             docs/registro_privacidade_lgpd.md
             docs/challenge_canvas.md
@@ -92,6 +177,7 @@ jobs:
             docs/datasheet_gold.md
             docs/dicionario_dados_gold.md
             docs/analise_social_pibic.md
+            transform/target/static_index.html
 
   deploy:
     needs: pipeline
@@ -110,12 +196,14 @@ jobs:
 
       - name: "Monta _site/"
         run: |
-          mkdir -p _site/app/src/dashboard/assets _site/app/data _site/app/docs
+          mkdir -p _site/app/src/dashboard/assets _site/app/export _site/app/docs
           cp site/index.html _site/index.html
-          cp src/dashboard/app.py _site/app/src/dashboard/app.py
+          cp src/dashboard/app.py src/dashboard/resposta_e1.py _site/app/src/dashboard/
           cp -r src/dashboard/assets/* _site/app/src/dashboard/assets/ 2>/dev/null || true
-          cp -r artifact/data/gold _site/app/data/gold
+          cp artifact/export/gold.json _site/app/export/gold.json
           cp artifact/docs/*.md _site/app/docs/
+          mkdir -p _site/dbt
+          cp artifact/transform/target/static_index.html _site/dbt/index.html
 
       - uses: actions/configure-pages@v5
 

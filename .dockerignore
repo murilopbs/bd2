@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+transform/target
+transform/logs
+venv
+.cache
+.env
+__pycache__
+*.pyc
+data/bronze/*.csv
+data/silver/*.csv
+export
+site
+*.pdf
